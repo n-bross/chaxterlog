@@ -324,7 +324,7 @@ export default function Counter({ user }: { user: { id: string; username: string
       <header className="count-header">
         <nav className="count-header-actions" aria-label="Konto, Events und Statistik">
           <Link href="/konto" className="account-button" aria-label="Konto und Gerät" title={user.username}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <circle cx="12" cy="8" r="3.5" />
               <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
             </svg>
@@ -338,38 +338,36 @@ export default function Counter({ user }: { user: { id: string; username: string
               setEventSaveError(null);
               setShowEventModal(true);
             }}
-            className={`stats-button ${currentDayEvent ? "stats-button-event" : ""}`}
+            className={`stats-button header-event-btn ${currentDayEvent ? "stats-button-event" : ""}`}
             aria-label="Event eintragen"
             title={currentDayEvent ? `Event: ${currentDayEvent.title}` : "Event für diesen Tag eintragen"}
           >
-            <span>📅</span>
+            <span className="stats-icon">📅</span>
             <span className="stats-label">{currentDayEvent ? currentDayEvent.title : "Events"}</span>
+            {currentDayEvent && <span className="header-event-dot" aria-hidden="true" />}
           </button>
-          <Link href="/statistik" className="stats-button" aria-label="Statistik">
-            <Icon name="stats" className="size-5" />
+          <Link href="/statistik" className="stats-button header-stats-btn" aria-label="Statistik">
+            <Icon name="stats" className="size-4 stats-icon" />
             <span className="stats-label">Statistik</span>
           </Link>
         </nav>
+
         <div className="count-header-center">
-          <output className="day-total" aria-label={`Gesamtzahl am ${selectedDay}: ${counts.u15 + counts.o15}`} aria-live="polite">
-            {ready ? counts.u15 + counts.o15 : "–"}
-          </output>
-          {latestActiveVisit && (
-            <div
-              className="recent-activity-compact"
-              title={`Letzter Klick: ${latestActiveVisit.group === "u15" ? "U15" : "Ü15"} von ${latestActiveVisit.username || "Mitarbeiter"} (${formatRelativeTime(latestActiveVisit.timestamp)})`}
-            >
-              <span className={`recent-activity-badge ${latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "recent-activity-other-device" : ""}`}>
-                {latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "📱 " : "✓ "}
-                Zuletzt: <strong>{latestActiveVisit.group === "u15" ? "U15" : "Ü15"}</strong> <span className="recent-activity-user">von {latestActiveVisit.username || "Mitarbeiter"}</span> <span className="recent-activity-time">({formatRelativeTime(latestActiveVisit.timestamp)})</span>
-              </span>
-            </div>
-          )}
+          <div className="day-total-wrap">
+            <output className="day-total" aria-label={`Gesamtzahl am ${selectedDay}: ${counts.u15 + counts.o15}`} aria-live="polite">
+              {ready ? counts.u15 + counts.o15 : "–"}
+            </output>
+            <span className="day-total-sublabel">Gesamt</span>
+          </div>
         </div>
+
         <div className="count-header-date">
           <label className="date-control">
-            <time dateTime={selectedDay || undefined}>
-              {selectedDay ? new Date(`${selectedDay}T12:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }) : " "}
+            <time dateTime={selectedDay || undefined} className="date-display-full">
+              {selectedDay ? new Date(`${selectedDay}T12:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }) : "\u00a0"}
+            </time>
+            <time dateTime={selectedDay || undefined} className="date-display-short">
+              {selectedDay ? new Date(`${selectedDay}T12:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" }) : "\u00a0"}
             </time>
             <input
               type="date"
@@ -389,7 +387,20 @@ export default function Counter({ user }: { user: { id: string; username: string
         </div>
       </header>
 
-      {/* Floating Alerts Container: Only for temporary warnings or active event banner */}
+      {/* Dedicated Activity Bar: Decoupled from Header grid, never overlaps buttons */}
+      {latestActiveVisit && (
+        <div className="recent-activity-bar" aria-live="polite">
+          <span
+            className={`recent-activity-badge ${latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "recent-activity-other-device" : ""}`}
+            title={`Letzter Klick: ${latestActiveVisit.group === "u15" ? "U15" : "Ü15"} von ${latestActiveVisit.username || "Mitarbeiter"} (${formatRelativeTime(latestActiveVisit.timestamp)})`}
+          >
+            {latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "📱 " : "✓ "}
+            Zuletzt: <strong>{latestActiveVisit.group === "u15" ? "U15" : "Ü15"}</strong> <span className="recent-activity-user">von {latestActiveVisit.username || "Mitarbeiter"}</span> <span className="recent-activity-time">({formatRelativeTime(latestActiveVisit.timestamp)})</span>
+          </span>
+        </div>
+      )}
+
+      {/* Floating Alerts Container: For temporary warnings or active event banner */}
       {(currentDayEvent || (duplicateWarning && !dismissedDuplicate)) && (
         <div className="counter-floating-alerts" aria-live="polite">
           {duplicateWarning && !dismissedDuplicate && (
@@ -464,11 +475,9 @@ export default function Counter({ user }: { user: { id: string; username: string
             <span className="counter-hold-bar" aria-hidden="true" />
             <span className="counter-minus-badge" aria-hidden="true">−1</span>
             <span className="counter-title">{label}</span>
-            <span className="counter-bottom">
-              <span className="counter-count">{ready ? counts[group] : "–"}</span>
-              <span className="counter-hold-hint" aria-hidden="true">
-                {holdingGroup === group ? "−1 abziehen …" : "Halten: −1"}
-              </span>
+            <span className="counter-count">{ready ? counts[group] : "–"}</span>
+            <span className="counter-hold-hint" aria-hidden="true">
+              {holdingGroup === group ? "−1 abziehen …" : "Halten: −1"}
             </span>
           </button>
         ))}
