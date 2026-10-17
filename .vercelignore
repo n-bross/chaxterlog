@@ -1,0 +1,10 @@
+.git/
+.vercel/
+.next/
+node_modules/
+.env*
+.agents/
+skills-lock.json
+AGENTS.md
+scripts/
+lib/*.test.ts
