@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dayKey, readDay, undoLastClick, STORAGE_PREFIX, type AgeGroup, type Counts, type TrackEvent } from "@/lib/tracking";
+import { dayKey, readDay, readEvents, undoLastClick, STORAGE_PREFIX, type AgeGroup, type Counts, type TrackEvent } from "@/lib/tracking";
 
 import { latestRedo, redoLastClick } from "@/lib/corrections";
 import type { Correction } from "@/lib/correction-types";
@@ -11,6 +11,7 @@ import { LOCAL_CHANGE } from "@/lib/sync";
 import { useVisitSync } from "@/lib/use-visit-sync";
 import { createId, getDevice } from "@/lib/device";
 import SyncStatus from "@/components/sync-status";
+import type { ChaxterEvent } from "@/lib/events";
 
 type IconName = "undo" | "redo" | "stats";
 function Icon({ name, className = "" }: { name: IconName; className?: string }) {
@@ -40,6 +41,17 @@ export default function Counter({ user }: { user: { id: string; username: string
   const isLongPressRef = useRef<Record<AgeGroup, boolean>>({ u15: false, o15: false });
   const pointerStartPosRef = useRef<Record<AgeGroup, { x: number; y: number } | null>>({ u15: null, o15: null });
 
+  // Event & Duplicate tracking states
+  const [currentDayEvent, setCurrentDayEvent] = useState<ChaxterEvent | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    group: AgeGroup;
+    diffSeconds: number;
+    user1: string;
+    user2: string;
+  } | null>(null);
+  const [dismissedDuplicate, setDismissedDuplicate] = useState(false);
+  const [latestActiveVisit, setLatestActiveVisit] = useState<TrackEvent | null>(null);
+
   const refresh = useCallback(() => {
     const date = new Date();
     const day = selectedDayRef.current ?? dayKey(date);
@@ -48,6 +60,36 @@ export default function Counter({ user }: { user: { id: string; username: string
       setCounts(counts);
       setLastEvent(latest?.event ?? null);
       setRedoEvent(latestRedo(localStorage, day));
+
+      // Inspect recent visits on this day to detect rapid duplicates
+      const allEvents = readEvents(localStorage);
+      const activeDayEvents = allEvents
+        .filter((e) => dayKey(new Date(e.timestamp)) === day && !(e as TrackEvent & { cancelled?: boolean }).cancelled)
+        .sort((a, b) => (b.order ?? Date.parse(b.timestamp)) - (a.order ?? Date.parse(a.timestamp)));
+
+      const e1 = activeDayEvents[0] ?? null;
+      const e2 = activeDayEvents[1] ?? null;
+      setLatestActiveVisit(e1);
+
+      if (e1 && e2 && e1.group === e2.group) {
+        const order1 = e1.order ?? Date.parse(e1.timestamp);
+        const order2 = e2.order ?? Date.parse(e2.timestamp);
+        const diffMs = Math.abs(order1 - order2);
+        const isRecent = Date.now() - Date.parse(e1.timestamp) < 45_000;
+        if (diffMs <= 4000 && isRecent) {
+          setDuplicateWarning({
+            group: e1.group,
+            diffSeconds: Math.max(1, Math.round(diffMs / 1000)),
+            user1: e1.username || "Mitarbeiter",
+            user2: e2.username || "Mitarbeiter",
+          });
+        } else {
+          setDuplicateWarning(null);
+        }
+      } else {
+        setDuplicateWarning(null);
+      }
+
       setStorageError(null);
       setReady(true);
     } catch {
@@ -59,6 +101,25 @@ export default function Counter({ user }: { user: { id: string; username: string
   }, []);
 
   const syncStatus = useVisitSync(refresh);
+
+  // Load event for current day
+  useEffect(() => {
+    if (!selectedDay) return;
+    let active = true;
+    fetch(`/api/events?from=${selectedDay}&to=${selectedDay}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active || !data || !Array.isArray(data.events)) return;
+        const matching = data.events.find((ev: ChaxterEvent) => ev.date === selectedDay);
+        setCurrentDayEvent(matching || null);
+      })
+      .catch(() => {
+        if (active) setCurrentDayEvent(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedDay]);
 
   useEffect(() => {
     // The compact interface follows the device's appearance without another button.
@@ -97,6 +158,7 @@ export default function Counter({ user }: { user: { id: string; username: string
       return;
     }
     selectedDayRef.current = null;
+    setDismissedDuplicate(false);
     refresh();
     setFeedback(`${group === "u15" ? "U15" : "Ü15"}: Besuch gespeichert. ${readDay(localStorage).counts[group]} heute.`);
     clearTimeout(timers.current[group]);
@@ -214,26 +276,102 @@ export default function Counter({ user }: { user: { id: string; username: string
     track(group);
   }
 
+  const formatRelativeTime = (timestamp: string) => {
+    const sec = Math.max(0, Math.floor((Date.now() - Date.parse(timestamp)) / 1000));
+    if (sec < 5) return "gerade eben";
+    if (sec < 60) return `vor ${sec}s`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `vor ${min} Min.`;
+    return new Date(timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  };
+
   return (
     <main className="count-screen">
       <header className="count-header">
-        <nav className="count-header-actions" aria-label="Konto und Statistik">
-          <Link href="/konto" className="account-button" aria-label="Konto und Gerät" title={user.username}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="12" cy="8" r="3.5" /><path d="M5 21v-2a7 7 0 0 1 14 0v2" /></svg></Link>
-          <Link href="/statistik" className="stats-button" aria-label="Statistik"><Icon name="stats" className="size-5" /><span className="stats-label">Statistik</span></Link>
+        <nav className="count-header-actions" aria-label="Konto, Events und Statistik">
+          <Link href="/konto" className="account-button" aria-label="Konto und Gerät" title={user.username}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <circle cx="12" cy="8" r="3.5" />
+              <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
+            </svg>
+          </Link>
+          <Link href="/statistik#events" className="stats-button" aria-label="Events und Termine" title="Events & Aktionen">
+            <span>📅</span>
+            <span className="stats-label">Events</span>
+          </Link>
+          <Link href="/statistik" className="stats-button" aria-label="Statistik">
+            <Icon name="stats" className="size-5" />
+            <span className="stats-label">Statistik</span>
+          </Link>
         </nav>
-        <output className="day-total" aria-label={`Gesamtzahl am ${selectedDay}: ${counts.u15 + counts.o15}`} aria-live="polite">{ready ? counts.u15 + counts.o15 : "–"}</output>
+        <output className="day-total" aria-label={`Gesamtzahl am ${selectedDay}: ${counts.u15 + counts.o15}`} aria-live="polite">
+          {ready ? counts.u15 + counts.o15 : "–"}
+        </output>
         <div className="count-header-date">
-        <label className="date-control">
-          <time dateTime={selectedDay || undefined}>{selectedDay ? new Date(`${selectedDay}T12:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }) : "\u00a0"}</time>
-          <input type="date" className="count-date" aria-label="Tag auswählen" onClick={(event) => { try { event.currentTarget.showPicker?.(); } catch { /* Native date input remains available. */ } }} value={selectedDay} max={now ? dayKey(now) : undefined} onChange={(event) => {
-          const value = event.target.value;
-          selectedDayRef.current = value && value !== dayKey() ? value : null;
-          refresh();
-        }} />
-        </label>
-        <SyncStatus status={syncStatus} />
+          <label className="date-control">
+            <time dateTime={selectedDay || undefined}>
+              {selectedDay ? new Date(`${selectedDay}T12:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }) : " "}
+            </time>
+            <input
+              type="date"
+              className="count-date"
+              aria-label="Tag auswählen"
+              onClick={(event) => { try { event.currentTarget.showPicker?.(); } catch { /* Native date input remains available. */ } }}
+              value={selectedDay}
+              max={now ? dayKey(now) : undefined}
+              onChange={(event) => {
+                const value = event.target.value;
+                selectedDayRef.current = value && value !== dayKey() ? value : null;
+                refresh();
+              }}
+            />
+          </label>
+          <SyncStatus status={syncStatus} />
         </div>
       </header>
+
+      {/* Event banner if an event is registered on this day */}
+      {currentDayEvent && (
+        <div className="event-counter-banner" role="status">
+          <span>
+            <span>🎉</span>
+            <span>{currentDayEvent.title}</span>
+          </span>
+          {currentDayEvent.description && (
+            <small>{currentDayEvent.description}</small>
+          )}
+        </div>
+      )}
+
+      {/* Duplicate entry warning banner with instant 1-click Undo */}
+      {duplicateWarning && !dismissedDuplicate && (
+        <div className="duplicate-warning-banner" role="alert">
+          <span>
+            ⚠️ <strong>Mögliche Doppelzählung:</strong> 2× {duplicateWarning.group === "u15" ? "U15" : "Ü15"} innerhalb von {duplicateWarning.diffSeconds || 1}s erfasst ({duplicateWarning.user1} &amp; {duplicateWarning.user2})
+          </span>
+          <button
+            type="button"
+            className="duplicate-undo-btn"
+            onClick={() => {
+              undoGroup(duplicateWarning.group);
+              setDismissedDuplicate(true);
+            }}
+          >
+            1× Abziehen (Undo)
+          </button>
+        </div>
+      )}
+
+      {/* Subtle live recent activity feed */}
+      <div className="recent-activity-bar" aria-live="polite">
+        {latestActiveVisit && (
+          <span className={`recent-activity-badge ${latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "recent-activity-other-device" : ""}`}>
+            {latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "📱 " : "✓ "}
+            Zuletzt: <strong>{latestActiveVisit.group === "u15" ? "U15" : "Ü15"}</strong> von {latestActiveVisit.username || "Mitarbeiter"} ({formatRelativeTime(latestActiveVisit.timestamp)})
+          </span>
+        )}
+      </div>
+
       <div className="count-grid">
         {([ ["u15", "U15", "counter-blue"], ["o15", "Ü15", "counter-yellow"] ] as const).map(([group, label, color]) => (
           <button
@@ -265,6 +403,7 @@ export default function Counter({ user }: { user: { id: string; username: string
           </button>
         ))}
       </div>
+
       <div className="count-actions" aria-label="Korrekturen">
         <button
           type="button"

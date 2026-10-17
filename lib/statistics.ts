@@ -112,6 +112,7 @@ export function analyzeEvents(events: TrackEvent[], period: Period, anchor: stri
       if (item) increment(item, event);
     }
   }
+  const topDays = [...sortedDays].sort((a, b) => b.total - a.total || b.key.localeCompare(a.key));
   return {
     range, events: visible, counts, total: visible.length, recordedDays: days.size,
     average: days.size ? visible.length / days.size : 0,
@@ -119,5 +120,6 @@ export function analyzeEvents(events: TrackEvent[], period: Period, anchor: stri
     bestWeekdays: bestAverage ? weekdays.filter((item) => item.average === bestAverage) : [],
     bestHours: bestHourCount ? hours.filter((item) => item.total === bestHourCount) : [],
     bestDays: bestDayCount ? sortedDays.filter((item) => item.total === bestDayCount) : [],
+    topDays,
   };
 }

@@ -18,6 +18,8 @@ export type ActivityItem = {
   redoOf?: string;
   visitTimestamp?: string;
   visitId?: string;
+  isRapidFollow?: boolean;
+  rapidDiffSeconds?: number;
   undoneBy?: {
     username?: string;
     timestamp: string;
@@ -106,7 +108,23 @@ export default function ActivityLog({
     }
 
     // Sort newest first
-    return list.sort((a, b) => b.order - a.order || b.id.localeCompare(a.id));
+    list.sort((a, b) => b.order - a.order || b.id.localeCompare(a.id));
+
+    // Detect rapid sequence visits in the same group (< 5 seconds)
+    const visits = list.filter((i) => i.kind === "visit");
+    for (let i = 0; i < visits.length - 1; i++) {
+      const current = visits[i];
+      const older = visits[i + 1];
+      if (current.group === older.group) {
+        const diff = Math.abs(current.order - older.order);
+        if (diff < 5000) {
+          current.isRapidFollow = true;
+          current.rapidDiffSeconds = Math.max(1, Math.round(diff / 1000));
+        }
+      }
+    }
+
+    return list;
   }, [records, range]);
 
   // Apply filter
@@ -122,15 +140,17 @@ export default function ActivityLog({
   const currentPage = Math.min(page, pageCount - 1);
   const visible = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
 
-  const countCancelled = items.filter((i) => i.kind === "visit" && i.cancelled).length;
   const countCorrections = items.filter((i) => i.kind === "undo" || i.kind === "redo").length;
+  const countCancelled = items.filter((i) => i.kind === "visit" && i.cancelled).length;
 
   return (
-    <section className="analytics-panel activity-log-panel" aria-label="Aktivitäts- und Korrektur-Verlauf">
+    <section className="analytics-panel activity-log-panel" aria-label="Aktivitätsverlauf und Korrekturen">
       <div className="analytics-panel-heading">
         <div>
-          <h3>Verlauf & Protokoll</h3>
-          <p>Chronologische Nachvollziehbarkeit: Zählungen, Rückgängig (Undo) & Wiederhergestellt (Redo)</p>
+          <h3 className="text-base font-semibold">Verlauf &amp; Protokoll</h3>
+          <p className="text-xs text-muted">
+            Chronologische Nachvollziehbarkeit: Zählungen, Rückgängig (Undo) &amp; Wiederhergestellt (Redo)
+          </p>
         </div>
         <span className="analytics-basis">{filtered.length} Aktionen</span>
       </div>
@@ -214,6 +234,11 @@ export default function ActivityLog({
                         ↪ Redo +1 {isU15 ? "U15" : "Ü15"}
                       </span>
                     )}
+                    {item.isRapidFollow && !item.cancelled && (
+                      <span className="status-pill pill-warning" title={`Nur ${item.rapidDiffSeconds}s nach vorherigem Klick erfasst`}>
+                        ⚠️ Schnellfolge ({item.rapidDiffSeconds}s)
+                      </span>
+                    )}
                   </div>
 
                   <div className="activity-time-wrap">
@@ -251,6 +276,12 @@ export default function ActivityLog({
                     </p>
                   )}
 
+                  {item.isRapidFollow && !item.cancelled && (
+                    <p className="activity-explanation text-warning">
+                      ⚠️ <strong>Mögliche Doppelzählung:</strong> Dieser Klick erfolgte {item.rapidDiffSeconds} Sekunden nach einer vorherigen {isU15 ? "U15" : "Ü15"}-Erfassung.
+                    </p>
+                  )}
+
                   <div className="activity-meta">
                     <span className="activity-user">
                       👤 {item.username || "Benutzer unbekannt"}
@@ -279,13 +310,13 @@ export default function ActivityLog({
             ←
           </button>
           <span>
-            {currentPage + 1} / {pageCount}
+            Seite {currentPage + 1} von {pageCount}
           </span>
           <button
             type="button"
             className="period-arrow"
             aria-label="Nächste Seite"
-            disabled={currentPage + 1 === pageCount}
+            disabled={currentPage >= pageCount - 1}
             onClick={() => setPage(currentPage + 1)}
           >
             →

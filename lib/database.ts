@@ -63,3 +63,64 @@ export async function saveVisits(events: VisitRecord[], actor: { id: string; use
   ]);
   return listVisits(events.map((event) => event.id));
 }
+
+export type EventRow = {
+  id: string;
+  event_date: string;
+  title: string;
+  description: string | null;
+  created_at: string;
+  created_by: string | null;
+};
+
+export async function listEvents(from?: string, to?: string) {
+  const sql = database();
+  let rows: EventRow[];
+  if (from && to) {
+    rows = (await sql`SELECT id, event_date::text, title, description, created_at, created_by FROM chaxter_events WHERE event_date >= ${from}::date AND event_date <= ${to}::date ORDER BY event_date ASC, created_at ASC`) as EventRow[];
+  } else {
+    rows = (await sql`SELECT id, event_date::text, title, description, created_at, created_by FROM chaxter_events ORDER BY event_date ASC, created_at ASC`) as EventRow[];
+  }
+  return rows.map((r) => ({
+    id: r.id,
+    date: r.event_date.slice(0, 10),
+    title: r.title,
+    description: r.description ?? undefined,
+    createdAt: new Date(r.created_at).toISOString(),
+    createdBy: r.created_by ?? undefined,
+  }));
+}
+
+export async function saveEvents(
+  items: { id?: string; date: string; title: string; description?: string }[],
+  actor: { id: string; username: string }
+) {
+  const sql = database();
+  if (items.length === 0) return [];
+  const payload = items.map((item) => ({
+    id: item.id || crypto.randomUUID(),
+    event_date: item.date,
+    title: item.title,
+    description: item.description ?? null,
+    created_by: actor.username,
+  }));
+
+  await sql`
+    INSERT INTO chaxter_events (id, event_date, title, description, created_by)
+    SELECT id, event_date::date, title, description, created_by
+    FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb)
+      AS batch(id uuid, event_date text, title text, description text, created_by text)
+    ON CONFLICT (id) DO UPDATE SET
+      event_date = EXCLUDED.event_date,
+      title = EXCLUDED.title,
+      description = EXCLUDED.description
+  `;
+
+  return listEvents();
+}
+
+export async function deleteEvent(id: string): Promise<boolean> {
+  const sql = database();
+  const res = await sql`DELETE FROM chaxter_events WHERE id = ${id}::uuid RETURNING id`;
+  return res.length > 0;
+}

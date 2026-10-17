@@ -3,10 +3,12 @@
 import Link from "next/link";
 import ChaxterLogo from "@/components/chaxter-logo";
 import ActivityLog from "@/components/activity-log";
+import EventsManager from "@/components/events-manager";
 import { readRecords, type VisitRecord } from "@/lib/sync-state";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { dayKey, readEvents, STORAGE_PREFIX, type TrackEvent } from "@/lib/tracking";
 import { analyzeEvents, periodRange, shiftPeriod, type Period } from "@/lib/statistics";
+import type { ChaxterEvent } from "@/lib/events";
 
 import { useVisitSync } from "@/lib/use-visit-sync";
 import SyncStatus from "@/components/sync-status";
@@ -77,6 +79,7 @@ export default function Statistics() {
   const [period, setPeriod] = useState<Period>("day");
   const [records, setRecords] = useState<VisitRecord[]>([]);
   const [events, setEvents] = useState<TrackEvent[]>([]);
+  const [eventsList, setEventsList] = useState<ChaxterEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
 
@@ -115,17 +118,47 @@ export default function Statistics() {
   const stats = useMemo(() => analyzeEvents(events, period, anchor || "2000-01-01"), [events, period, anchor]);
   const range = useMemo(() => periodRange(period, anchor || "2000-01-01"), [period, anchor]);
 
+  // When viewing a single day, show the week around this day in the trend instead of 24 empty hours
+  const weekStats = useMemo(() => analyzeEvents(events, "week", anchor || "2000-01-01"), [events, anchor]);
+
+  const eventsMap = useMemo(() => {
+    const map = new Map<string, ChaxterEvent>();
+    for (const ev of eventsList) {
+      map.set(ev.date, ev);
+    }
+    return map;
+  }, [eventsList]);
+
   const bestWeekday = stats.bestWeekdays[0];
-  const bestHour = stats.bestHours[0];
   const bestDay = stats.bestDays[0];
-  const unitLabel = { hour: "Stunden", day: "Tage", month: "Monate", year: "Jahre" }[stats.unit];
-  const unitCaption = { hour: "Stunde", day: "Tag", month: "Monat", year: "Jahr" }[stats.unit];
+  const bestDayEvent = bestDay ? eventsMap.get(bestDay.key) : undefined;
+  const unitLabel = { hour: "Tage", day: "Tage", month: "Monate", year: "Jahre" }[stats.unit];
+  const unitCaption = { hour: "Tag", day: "Tag", month: "Monat", year: "Jahr" }[stats.unit];
 
   function downloadPeriod(format: string) {
     const from = range ? range.start : "2000-01-01";
     const to = range ? range.end : "2099-12-31";
     return `/api/admin/export?${new URLSearchParams({ format, from, to })}`;
   }
+
+  // Determine rows for Verlauf: always daily / monthly / yearly, NEVER hours
+  const trendRows = useMemo(() => {
+    if (period === "day") {
+      return weekStats.series.map((item) => ({
+        ...item,
+        label: item.key === anchor ? `${item.label} (Dieser Tag)` : item.label,
+        value: item.total,
+        detail: `U15 ${item.u15}, Ü15 ${item.o15}`,
+      }));
+    }
+    return stats.series.map((item) => ({
+      ...item,
+      value: item.total,
+      detail: `U15 ${item.u15}, Ü15 ${item.o15}`,
+    }));
+  }, [period, anchor, weekStats.series, stats.series]);
+
+  const maxTopDay = useMemo(() => Math.max(1, ...(stats.topDays?.map((d) => d.total) ?? [1])), [stats.topDays]);
 
   return (
     <main className="statistics-screen">
@@ -253,21 +286,25 @@ export default function Statistics() {
                     </p>
                   </article>
                   <article className="analytics-panel insight-card">
-                    <h3>Stärkstes Stundenfenster</h3>
-                    <strong>{stats.bestHours.length === 1 ? bestHour.label : "Gleichstand"}</strong>
+                    <h3>Bester Tag (Rekord)</h3>
+                    <strong>
+                      {stats.bestDays.length === 1
+                        ? shortDate(bestDay.key)
+                        : stats.bestDays.length > 1
+                        ? `${stats.bestDays.length} Rekordtage`
+                        : "–"}
+                    </strong>
                     <p>
-                      {stats.bestHours.length > 1
-                        ? `${stats.bestHours.length} Stundenfenster mit je ${number.format(bestHour?.total ?? 0)} Besuchen`
-                        : `${number.format(bestHour?.total ?? 0)} Besuche im Zeitraum`}
+                      {stats.bestDays.length > 0
+                        ? `${number.format(bestDay?.total ?? 0)} Besuche ${bestDayEvent ? `· 🎉 ${bestDayEvent.title}` : "(Höchstwert)"}`
+                        : "Keine Besuche"}
                     </p>
                   </article>
                   <article className="analytics-panel insight-card">
-                    <h3>Stärkster einzelner Tag</h3>
-                    <strong>{stats.bestDays.length === 1 ? shortDate(bestDay.key) : "Gleichstand"}</strong>
+                    <h3>Ø Besuche pro Tag</h3>
+                    <strong>{number.format(stats.average)} Besuche</strong>
                     <p>
-                      {stats.bestDays.length > 1
-                        ? `${stats.bestDays.length} Tage mit je ${number.format(bestDay?.total ?? 0)} Besuchen`
-                        : `${number.format(bestDay?.total ?? 0)} Besuche im Zeitraum`}
+                      Durchschnitt an allen {stats.recordedDays} erfassten Tagen
                     </p>
                   </article>
                 </section>
@@ -276,7 +313,11 @@ export default function Statistics() {
                   <div className="analytics-panel-heading">
                     <div>
                       <h3>Verlauf</h3>
-                      <p>Besuche pro {unitCaption}</p>
+                      <p>
+                        {period === "day"
+                          ? `Woche um den ${shortDate(anchor)} · Besuche pro Tag`
+                          : `Besuche pro ${unitCaption}`}
+                      </p>
                     </div>
                     <div className="chart-legend">
                       <span>
@@ -291,12 +332,8 @@ export default function Statistics() {
                   </div>
                   <Bars
                     stacked
-                    label={`Besuche nach ${unitLabel}`}
-                    rows={stats.series.map((item) => ({
-                      ...item,
-                      value: item.total,
-                      detail: `U15 ${item.u15}, Ü15 ${item.o15}`,
-                    }))}
+                    label={period === "day" ? "Besuche der Tage um das Datum" : `Besuche nach ${unitLabel}`}
+                    rows={trendRows}
                   />
                 </section>
 
@@ -317,22 +354,68 @@ export default function Statistics() {
                       }))}
                     />
                   </section>
-                  <section className="analytics-panel">
+                  <section className="analytics-panel best-days-panel">
                     <div className="analytics-panel-heading">
                       <div>
-                        <h3>Uhrzeiten</h3>
-                        <p>Besuche je Stunde · Europe/Berlin</p>
+                        <h3>Beste Tage</h3>
+                        <p>Rangliste der besucherstärksten Tage {period !== "all" ? "im Zeitraum" : ""}</p>
                       </div>
                     </div>
-                    <Bars
-                      label="Besuche nach Stundenfenster"
-                      rows={stats.hours.map((item) => ({ ...item, value: item.total }))}
-                    />
+                    {!stats.topDays || stats.topDays.length === 0 ? (
+                      <p className="text-xs text-muted py-3">Keine Besuchstage im gewählten Zeitraum.</p>
+                    ) : (
+                      <div className="analytics-bars" role="list" aria-label="Beste Besuchstage">
+                        {stats.topDays.slice(0, 7).map((dayItem, index) => {
+                          const medal = index === 0 ? "🥇 " : index === 1 ? "🥈 " : index === 2 ? "🥉 " : `#${index + 1} `;
+                          const eventOnDay = eventsMap.get(dayItem.key);
+                          return (
+                            <div
+                              key={dayItem.key}
+                              className="analytics-bar-row best-day-row"
+                              role="listitem"
+                              onClick={() => {
+                                setPeriod("day");
+                                setAnchor(dayItem.key);
+                              }}
+                              title="Klicken, um diesen Tag detailliert anzuzeigen"
+                            >
+                              <span className="analytics-bar-label flex items-center gap-1.5 truncate">
+                                <span className="font-semibold">{medal}</span>
+                                <span>{shortDate(dayItem.key)}</span>
+                                {eventOnDay && (
+                                  <span className="best-day-event-tag" title={eventOnDay.title}>
+                                    🎉 {eventOnDay.title}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="analytics-bar-track" aria-hidden="true">
+                                <span
+                                  className="analytics-bar-fill"
+                                  style={{ width: `${(dayItem.total / maxTopDay) * 100}%` }}
+                                >
+                                  <span className="counter-blue" style={{ flex: dayItem.u15 }} />
+                                  <span className="counter-yellow" style={{ flex: dayItem.o15 }} />
+                                </span>
+                              </span>
+                              <span className="analytics-bar-value">{number.format(dayItem.total)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </section>
                 </div>
               </>
             )
           )}
+
+          {/* Events Manager section for entering events or importing lists/calendars */}
+          <div id="events">
+            <EventsManager
+              highlightDate={anchor}
+              onEventsChange={(evs) => setEventsList(evs)}
+            />
+          </div>
 
           {/* Unified chronological Activity Log showing visits, undos, and redos */}
           <ActivityLog records={records} range={range} />
