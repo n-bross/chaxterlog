@@ -26,10 +26,15 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
   padding: calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));
 }
 .count-header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; flex-shrink: 0; gap: 8px; }
-.count-header .stats-button { justify-self: start; min-height: 44px; padding: 8px; gap: 6px; font-size: 12px; }
+.count-header-actions { display: flex; align-items: center; gap: 6px; justify-self: start; }
+.count-header-actions .account-button { flex-shrink: 0; }
+.count-header .stats-button { justify-self: start; min-height: 44px; padding: 8px 12px; gap: 6px; font-size: 12px; flex-shrink: 0; }
 .count-header .stats-button svg { flex-shrink: 0; }
 .day-total { color: var(--accent); min-width: 48px; text-align: center; font-size: clamp(28px, 5vw, 42px); line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; }
-.date-control { position: relative; display: flex; align-items: center; justify-content: flex-end; justify-self: end; width: 100%; max-width: 160px; min-width: 0; min-height: 44px; border-radius: 8px; color: var(--muted); font-size: 14px; font-weight: 500; cursor: pointer; }
+.count-header-date { display: flex; align-items: center; justify-content: flex-end; gap: 8px; justify-self: end; }
+.count-header-date .date-control { width: auto; max-width: none; }
+.count-header-date .sync-status { flex-shrink: 0; }
+.date-control { position: relative; display: flex; align-items: center; justify-content: flex-end; justify-self: end; min-width: 0; min-height: 44px; border-radius: 8px; color: var(--muted); font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .date-control:focus-within { outline: 3px solid var(--text); outline-offset: 5px; }
 .count-date { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; cursor: pointer; }
 .count-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(12px, 2vw, 24px); flex: 1; min-height: 0; }
