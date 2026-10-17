@@ -18,6 +18,10 @@ export default function Account({ user }: { user: { username: string; role: stri
   const [supportBusy, setSupportBusy] = useState(false);
   const [supportMsg, setSupportMsg] = useState("");
 
+  // Download export state
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+
   useEffect(() => {
     try {
       setDevice(getDevice());
@@ -79,7 +83,7 @@ export default function Account({ user }: { user: { username: string; role: stri
     setSupportBusy(true);
     setSupportMsg("");
     try {
-      const res = await sendDiagnosticReport(supportNotes);
+      await sendDiagnosticReport(supportNotes);
       setSupportMsg("✓ Diagnosebericht erfolgreich gesendet. Der Admin kann den Zustand nun in der Admin-Ansicht prüfen.");
       setSupportNotes("");
     } catch (err) {
@@ -106,6 +110,11 @@ export default function Account({ user }: { user: { username: string; role: stri
     } finally {
       setBusy(false);
     }
+  }
+
+  const invalidExportRange = !!exportFrom && !!exportTo && exportFrom > exportTo;
+  function downloadExport(format: string) {
+    return `/api/admin/export?${new URLSearchParams({ format, from: exportFrom, to: exportTo })}`;
   }
 
   return (
@@ -135,6 +144,42 @@ export default function Account({ user }: { user: { username: string; role: stri
             Abmelden
           </button>
         </div>
+      </section>
+
+      {/* Download function for all users */}
+      <section className="manage-card">
+        <h2>Daten herunterladen</h2>
+        <div className="form-row">
+          <label>
+            Von
+            <input type="date" value={exportFrom} onChange={(event) => setExportFrom(event.target.value)} />
+          </label>
+          <label>
+            Bis
+            <input type="date" value={exportTo} onChange={(event) => setExportTo(event.target.value)} />
+          </label>
+        </div>
+        <p className="muted">
+          CSV- und JSON-Exporte der erfassten Besuche und Korrekturen. Ohne Datum wird der gesamte Datenbestand heruntergeladen.
+        </p>
+        {invalidExportRange ? (
+          <p role="alert">Das Enddatum liegt vor dem Anfangsdatum.</p>
+        ) : (
+          <div className="button-row">
+            <a className="primary-button" href={downloadExport("csv")} download>
+              Einzelbesuche · CSV
+            </a>
+            <a className="secondary-button" href={downloadExport("daily")} download>
+              Tageswerte · CSV
+            </a>
+            <a className="secondary-button" href={downloadExport("corrections")} download>
+              Undo &amp; Redo · CSV
+            </a>
+            <a className="secondary-button" href={downloadExport("json")} download>
+              Alle Details · JSON
+            </a>
+          </div>
+        )}
       </section>
 
       <section className="manage-card">

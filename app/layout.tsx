@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import AppUpdater from "@/components/app-updater";
+import StagingBanner from "@/components/staging-banner";
 
 export const metadata: Metadata = {
   title: "ChaxterLog · Einfach zählen.",
@@ -11,7 +12,9 @@ export const metadata: Metadata = {
   icons: { icon: "/icon.svg", apple: "/icons/apple-touch-icon.png" },
 };
 export const viewport: Viewport = {
-  width: "device-width", initialScale: 1, viewportFit: "cover",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
   colorScheme: "light dark",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f5f8fa" },
@@ -20,5 +23,13 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="de"><body>{children}<AppUpdater /></body></html>;
+  return (
+    <html lang="de">
+      <body>
+        <StagingBanner />
+        {children}
+        <AppUpdater />
+      </body>
+    </html>
+  );
 }
