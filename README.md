@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="ChaxterLog Logo" width="160" />
+</p>
+
 # ChaxterLog
 
 Besucherzählung für das Schülercafé Grafing (Chaxter): Next.js App Router, TypeScript und Tailwind CSS, PostgreSQL bei Neon und Benutzeranmeldung mit Better Auth.
