@@ -52,6 +52,14 @@ export default function Counter({ user }: { user: { id: string; username: string
   const [dismissedDuplicate, setDismissedDuplicate] = useState(false);
   const [latestActiveVisit, setLatestActiveVisit] = useState<TrackEvent | null>(null);
 
+  // Quick event input modal state
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [eventDate, setEventDate] = useState("");
+  const [eventTitle, setEventTitle] = useState("");
+  const [eventDesc, setEventDesc] = useState("");
+  const [isSavingEvent, setIsSavingEvent] = useState(false);
+  const [eventSaveError, setEventSaveError] = useState<string | null>(null);
+
   const refresh = useCallback(() => {
     const date = new Date();
     const day = selectedDayRef.current ?? dayKey(date);
@@ -103,23 +111,49 @@ export default function Counter({ user }: { user: { id: string; username: string
   const syncStatus = useVisitSync(refresh);
 
   // Load event for current day
-  useEffect(() => {
-    if (!selectedDay) return;
-    let active = true;
-    fetch(`/api/events?from=${selectedDay}&to=${selectedDay}`)
+  const loadDayEvent = useCallback((day: string) => {
+    if (!day) return;
+    fetch(`/api/events?from=${day}&to=${day}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!active || !data || !Array.isArray(data.events)) return;
-        const matching = data.events.find((ev: ChaxterEvent) => ev.date === selectedDay);
+        if (!data || !Array.isArray(data.events)) return;
+        const matching = data.events.find((ev: ChaxterEvent) => ev.date === day);
         setCurrentDayEvent(matching || null);
       })
-      .catch(() => {
-        if (active) setCurrentDayEvent(null);
+      .catch(() => setCurrentDayEvent(null));
+  }, []);
+
+  useEffect(() => {
+    loadDayEvent(selectedDay);
+  }, [selectedDay, loadDayEvent]);
+
+  async function handleSaveEvent(e: React.FormEvent) {
+    e.preventDefault();
+    if (!eventDate || !eventTitle.trim()) return;
+    setIsSavingEvent(true);
+    setEventSaveError(null);
+    try {
+      const res = await fetch("/api/events", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: eventDate,
+          title: eventTitle.trim(),
+          description: eventDesc.trim() || undefined,
+        }),
       });
-    return () => {
-      active = false;
-    };
-  }, [selectedDay]);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Fehler beim Speichern");
+      setShowEventModal(false);
+      setEventTitle("");
+      setEventDesc("");
+      loadDayEvent(selectedDay);
+    } catch (err: unknown) {
+      setEventSaveError(err instanceof Error ? err.message : "Fehler beim Speichern");
+    } finally {
+      setIsSavingEvent(false);
+    }
+  }
 
   useEffect(() => {
     // The compact interface follows the device's appearance without another button.
@@ -295,10 +329,22 @@ export default function Counter({ user }: { user: { id: string; username: string
               <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
             </svg>
           </Link>
-          <Link href="/statistik#events" className="stats-button" aria-label="Events und Termine" title="Events & Aktionen">
+          <button
+            type="button"
+            onClick={() => {
+              setEventDate(selectedDay || dayKey());
+              setEventTitle(currentDayEvent ? currentDayEvent.title : "");
+              setEventDesc(currentDayEvent?.description || "");
+              setEventSaveError(null);
+              setShowEventModal(true);
+            }}
+            className="stats-button"
+            aria-label="Event eintragen"
+            title="Event für diesen Tag eintragen"
+          >
             <span>📅</span>
             <span className="stats-label">Events</span>
-          </Link>
+          </button>
           <Link href="/statistik" className="stats-button" aria-label="Statistik">
             <Icon name="stats" className="size-5" />
             <span className="stats-label">Statistik</span>
@@ -449,6 +495,90 @@ export default function Counter({ user }: { user: { id: string; username: string
       <div className="sr-only" aria-live="polite" aria-atomic="true">{feedback}</div>
       {syncStatus.state === "conflict" && <div role="alert" className="error-message">{syncStatus.message} <Link className="underline" href="/login">Anmelden</Link></div>}
       {storageError && <div role="alert" className="error-message">{storageError} <button className="underline" onClick={refresh}>Erneut prüfen</button></div>}
+    
+      {/* Quick Event Input Modal */}
+      {showEventModal && (
+        <div className="modal-backdrop" onClick={() => setShowEventModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="modal-title font-semibold text-lg flex items-center gap-2">
+                <span>📅</span> Event eintragen
+              </h3>
+              <button
+                type="button"
+                className="banner-close-btn text-base"
+                onClick={() => setShowEventModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEvent} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium mb-1">Tag auswählen:</label>
+                <input
+                  type="date"
+                  required
+                  value={eventDate}
+                  onChange={(e) => setEventDate(e.target.value)}
+                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Event-Name:</label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="z. B. Sommerfest, Kickerturnier, Filmabend"
+                  value={eventTitle}
+                  onChange={(e) => setEventTitle(e.target.value)}
+                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Notiz / Uhrzeit (optional):</label>
+                <input
+                  type="text"
+                  placeholder="z. B. 14:00 – 18:00 Uhr, Grillen"
+                  value={eventDesc}
+                  onChange={(e) => setEventDesc(e.target.value)}
+                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
+                />
+              </div>
+
+              {eventSaveError && <p className="error-message text-xs">{eventSaveError}</p>}
+
+              <div className="modal-actions flex items-center justify-between pt-2">
+                <Link
+                  href="/statistik#events"
+                  className="text-xs text-muted underline hover:text-white"
+                  onClick={() => setShowEventModal(false)}
+                >
+                  Alle Events &amp; Import →
+                </Link>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="secondary-button btn-small"
+                    onClick={() => setShowEventModal(false)}
+                    disabled={isSavingEvent}
+                  >
+                    Abbrechen
+                  </button>
+                  <button
+                    type="submit"
+                    className="primary-button btn-small"
+                    disabled={isSavingEvent || !eventTitle.trim()}
+                  >
+                    {isSavingEvent ? "Speichern …" : "Speichern"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
