@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dayKey, readDay, readEvents, undoLastClick, STORAGE_PREFIX, type AgeGroup, type Counts, type TrackEvent } from "@/lib/tracking";
 
@@ -35,6 +36,7 @@ export default function Counter({ user }: { user: { id: string; username: string
   const [holdingGroup, setHoldingGroup] = useState<AgeGroup | null>(null);
   const [redoEvent, setRedoEvent] = useState<TrackEvent | null>(null);
   const [lastEvent, setLastEvent] = useState<TrackEvent | null>(null);
+  const [latestByGroup, setLatestByGroup] = useState<Record<AgeGroup, TrackEvent | null>>({ u15: null, o15: null });
   const [feedback, setFeedback] = useState("");
   const timers = useRef<Partial<Record<AgeGroup, ReturnType<typeof setTimeout>>>>({});
   const holdTimers = useRef<Record<AgeGroup, ReturnType<typeof setTimeout> | null>>({ u15: null, o15: null });
@@ -50,7 +52,6 @@ export default function Counter({ user }: { user: { id: string; username: string
     user2: string;
   } | null>(null);
   const [dismissedDuplicate, setDismissedDuplicate] = useState(false);
-  const [latestActiveVisit, setLatestActiveVisit] = useState<TrackEvent | null>(null);
 
   // Quick event input modal state
   const [showEventModal, setShowEventModal] = useState(false);
@@ -69,15 +70,18 @@ export default function Counter({ user }: { user: { id: string; username: string
       setLastEvent(latest?.event ?? null);
       setRedoEvent(latestRedo(localStorage, day));
 
-      // Inspect recent visits on this day to detect rapid duplicates
+      // Inspect recent visits on this day to detect rapid duplicates and latest per group
       const allEvents = readEvents(localStorage);
       const activeDayEvents = allEvents
         .filter((e) => dayKey(new Date(e.timestamp)) === day && !(e as TrackEvent & { cancelled?: boolean }).cancelled)
         .sort((a, b) => (b.order ?? Date.parse(b.timestamp)) - (a.order ?? Date.parse(a.timestamp)));
 
+      const latestU15 = activeDayEvents.find((e) => e.group === "u15") ?? null;
+      const latestO15 = activeDayEvents.find((e) => e.group === "o15") ?? null;
+      setLatestByGroup({ u15: latestU15, o15: latestO15 });
+
       const e1 = activeDayEvents[0] ?? null;
       const e2 = activeDayEvents[1] ?? null;
-      setLatestActiveVisit(e1);
 
       if (e1 && e2 && e1.group === e2.group) {
         const order1 = e1.order ?? Date.parse(e1.timestamp);
@@ -156,7 +160,6 @@ export default function Counter({ user }: { user: { id: string; username: string
   }
 
   useEffect(() => {
-    // The compact interface follows the device's appearance without another button.
     delete document.documentElement.dataset.theme;
     refresh();
     const interval = setInterval(refresh, 15_000);
@@ -315,43 +318,33 @@ export default function Counter({ user }: { user: { id: string; username: string
     if (sec < 5) return "gerade eben";
     if (sec < 60) return `vor ${sec}s`;
     const min = Math.floor(sec / 60);
-    if (min < 60) return `vor ${min} Min.`;
+    if (min < 60) return `vor ${min}m`;
     return new Date(timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
   };
 
   return (
     <main className="count-screen">
       <header className="count-header">
-        <nav className="count-header-actions" aria-label="Konto, Events und Statistik">
-          <Link href="/konto" className="account-button" aria-label="Konto und Gerät" title={user.username}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <circle cx="12" cy="8" r="3.5" />
-              <path d="M5 21v-2a7 7 0 0 1 14 0v2" />
-            </svg>
+        {/* Left: Chaxter Logo & Statistik */}
+        <div className="count-header-left">
+          <Link href="/konto" className="header-logo-link" aria-label="Konto und Einstellungen" title={`Konto: ${user.username}`}>
+            <Image
+              src="/chaxter-logo.png"
+              alt="Chaxter"
+              width={2360}
+              height={1640}
+              sizes="76px"
+              className="header-logo-image"
+              priority
+            />
           </Link>
-          <button
-            type="button"
-            onClick={() => {
-              setEventDate(selectedDay || dayKey());
-              setEventTitle(currentDayEvent ? currentDayEvent.title : "");
-              setEventDesc(currentDayEvent?.description || "");
-              setEventSaveError(null);
-              setShowEventModal(true);
-            }}
-            className={`stats-button header-event-btn ${currentDayEvent ? "stats-button-event" : ""}`}
-            aria-label="Event eintragen"
-            title={currentDayEvent ? `Event: ${currentDayEvent.title}` : "Event für diesen Tag eintragen"}
-          >
-            <span className="stats-icon">📅</span>
-            <span className="stats-label">{currentDayEvent ? currentDayEvent.title : "Events"}</span>
-            {currentDayEvent && <span className="header-event-dot" aria-hidden="true" />}
-          </button>
-          <Link href="/statistik" className="stats-button header-stats-btn" aria-label="Statistik">
+          <Link href="/statistik" className="stats-button header-stats-btn" aria-label="Statistik" title="Statistik öffnen">
             <Icon name="stats" className="size-4 stats-icon" />
             <span className="stats-label">Statistik</span>
           </Link>
-        </nav>
+        </div>
 
+        {/* Center: Total count */}
         <div className="count-header-center">
           <div className="day-total-wrap">
             <output className="day-total" aria-label={`Gesamtzahl am ${selectedDay}: ${counts.u15 + counts.o15}`} aria-live="polite">
@@ -361,126 +354,130 @@ export default function Counter({ user }: { user: { id: string; username: string
           </div>
         </div>
 
-        <div className="count-header-date">
-          <label className="date-control">
-            <time dateTime={selectedDay || undefined} className="date-display-full">
-              {selectedDay ? new Date(`${selectedDay}T12:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }) : "\u00a0"}
-            </time>
-            <time dateTime={selectedDay || undefined} className="date-display-short">
-              {selectedDay ? new Date(`${selectedDay}T12:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" }) : "\u00a0"}
-            </time>
-            <input
-              type="date"
-              className="count-date"
-              aria-label="Tag auswählen"
-              onClick={(event) => { try { event.currentTarget.showPicker?.(); } catch { /* Native date input remains available. */ } }}
-              value={selectedDay}
-              max={now ? dayKey(now) : undefined}
-              onChange={(event) => {
-                const value = event.target.value;
-                selectedDayRef.current = value && value !== dayKey() ? value : null;
-                refresh();
-              }}
-            />
-          </label>
-          <SyncStatus status={syncStatus} />
+        {/* Right: Event (+ Button) & Date without button styling */}
+        <div className="count-header-right">
+          <button
+            type="button"
+            onClick={() => {
+              setEventDate(selectedDay || dayKey());
+              setEventTitle(currentDayEvent ? currentDayEvent.title : "");
+              setEventDesc(currentDayEvent?.description || "");
+              setEventSaveError(null);
+              setShowEventModal(true);
+            }}
+            className={`header-event-trigger ${currentDayEvent ? "has-event" : ""}`}
+            aria-label="Event eintragen oder ansehen"
+            title={currentDayEvent ? `Event: ${currentDayEvent.title}` : "Event für diesen Tag eintragen"}
+          >
+            <span className="event-plus-icon">+</span>
+            <span className="event-trigger-label">{currentDayEvent ? currentDayEvent.title : "Event"}</span>
+          </button>
+
+          <div className="count-header-date">
+            <label className="clean-date-control" title="Tag auswählen">
+              <time dateTime={selectedDay || undefined} className="date-display-full">
+                {selectedDay ? new Date(`${selectedDay}T12:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" }) : "\u00a0"}
+              </time>
+              <time dateTime={selectedDay || undefined} className="date-display-short">
+                {selectedDay ? new Date(`${selectedDay}T12:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" }) : "\u00a0"}
+              </time>
+              <input
+                type="date"
+                className="count-date"
+                aria-label="Tag auswählen"
+                onClick={(event) => { try { event.currentTarget.showPicker?.(); } catch { /* Native date input */ } }}
+                value={selectedDay}
+                max={now ? dayKey(now) : undefined}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  selectedDayRef.current = value && value !== dayKey() ? value : null;
+                  refresh();
+                }}
+              />
+            </label>
+            <SyncStatus status={syncStatus} />
+          </div>
         </div>
       </header>
 
-      {/* Dedicated Activity Bar: Decoupled from Header grid, never overlaps buttons */}
-      {latestActiveVisit && (
-        <div className="recent-activity-bar" aria-live="polite">
-          <span
-            className={`recent-activity-badge ${latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "recent-activity-other-device" : ""}`}
-            title={`Letzter Klick: ${latestActiveVisit.group === "u15" ? "U15" : "Ü15"} von ${latestActiveVisit.username || "Mitarbeiter"} (${formatRelativeTime(latestActiveVisit.timestamp)})`}
-          >
-            {latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "📱 " : "✓ "}
-            Zuletzt: <strong>{latestActiveVisit.group === "u15" ? "U15" : "Ü15"}</strong> <span className="recent-activity-user">von {latestActiveVisit.username || "Mitarbeiter"}</span> <span className="recent-activity-time">({formatRelativeTime(latestActiveVisit.timestamp)})</span>
-          </span>
-        </div>
-      )}
-
-      {/* Floating Alerts Container: For temporary warnings or active event banner */}
-      {(currentDayEvent || (duplicateWarning && !dismissedDuplicate)) && (
+      {/* Floating Warnings / Temporary Notices */}
+      {(duplicateWarning && !dismissedDuplicate) && (
         <div className="counter-floating-alerts" aria-live="polite">
-          {duplicateWarning && !dismissedDuplicate && (
-            <div className="duplicate-warning-banner" role="alert">
-              <span>
-                ⚠️ <strong>Mögliche Doppelzählung:</strong> 2× {duplicateWarning.group === "u15" ? "U15" : "Ü15"} innerhalb von {duplicateWarning.diffSeconds || 1}s erfasst ({duplicateWarning.user1} &amp; {duplicateWarning.user2})
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="duplicate-undo-btn"
-                  onClick={() => {
-                    undoGroup(duplicateWarning.group);
-                    setDismissedDuplicate(true);
-                  }}
-                >
-                  1× Abziehen (Undo)
-                </button>
-                <button
-                  type="button"
-                  className="banner-close-btn"
-                  onClick={() => setDismissedDuplicate(true)}
-                  title="Hinweis schließen"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          )}
-
-          {currentDayEvent && (
-            <div className="event-counter-banner" role="status">
-              <span>
-                <span>🎉</span>
-                <span>{currentDayEvent.title}</span>
-                {currentDayEvent.description && (
-                  <small>· {currentDayEvent.description}</small>
-                )}
-              </span>
+          <div className="duplicate-warning-banner" role="alert">
+            <span>
+              ⚠️ <strong>Mögliche Doppelzählung:</strong> 2× {duplicateWarning.group === "u15" ? "U15" : "Ü15"} innerhalb von {duplicateWarning.diffSeconds || 1}s erfasst ({duplicateWarning.user1} &amp; {duplicateWarning.user2})
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="duplicate-undo-btn"
+                onClick={() => {
+                  undoGroup(duplicateWarning.group);
+                  setDismissedDuplicate(true);
+                }}
+              >
+                1× Abziehen (Undo)
+              </button>
               <button
                 type="button"
                 className="banner-close-btn"
-                onClick={() => setCurrentDayEvent(null)}
-                title="Ausblenden"
+                onClick={() => setDismissedDuplicate(true)}
+                title="Hinweis schließen"
               >
                 ✕
               </button>
             </div>
-          )}
+          </div>
         </div>
       )}
 
+      {/* Big Counting Buttons with Latest Editor directly on the respective button */}
       <div className="count-grid">
-        {([ ["u15", "U15", "counter-blue"], ["o15", "Ü15", "counter-yellow"] ] as const).map(([group, label, color]) => (
-          <button
-            key={group}
-            type="button"
-            disabled={!ready}
-            onPointerDown={(e) => handlePointerDown(group, e)}
-            onPointerMove={(e) => handlePointerMove(group, e)}
-            onPointerUp={() => handlePointerUp(group)}
-            onPointerLeave={() => cancelHold(group)}
-            onPointerCancel={() => cancelHold(group)}
-            onContextMenu={(e) => e.preventDefault()}
-            onClick={(e) => handleClick(group, e)}
-            aria-label={`${label}: einen Besuch zählen (Tippen für +1, gedrückt halten zum Abziehen für -1). Stand am ${selectedDay}: ${counts[group]}`}
-            className={`counter-button ${color}`}
-            data-flash={flash[group]}
-            data-decrement={decrementFlash[group]}
-            data-holding={holdingGroup === group}
-          >
-            <span className="counter-hold-bar" aria-hidden="true" />
-            <span className="counter-minus-badge" aria-hidden="true">−1</span>
-            <span className="counter-title">{label}</span>
-            <span className="counter-count">{ready ? counts[group] : "–"}</span>
-            <span className="counter-hold-hint" aria-hidden="true">
-              {holdingGroup === group ? "−1 abziehen …" : "Halten: −1"}
-            </span>
-          </button>
-        ))}
+        {([ ["u15", "U15", "counter-blue"], ["o15", "Ü15", "counter-yellow"] ] as const).map(([group, label, color]) => {
+          const groupLatest = latestByGroup[group];
+          return (
+            <button
+              key={group}
+              type="button"
+              disabled={!ready}
+              onPointerDown={(e) => handlePointerDown(group, e)}
+              onPointerMove={(e) => handlePointerMove(group, e)}
+              onPointerUp={() => handlePointerUp(group)}
+              onPointerLeave={() => cancelHold(group)}
+              onPointerCancel={() => cancelHold(group)}
+              onContextMenu={(e) => e.preventDefault()}
+              onClick={(e) => handleClick(group, e)}
+              aria-label={`${label}: einen Besuch zählen (Tippen für +1, gedrückt halten zum Abziehen für -1). Stand am ${selectedDay}: ${counts[group]}`}
+              className={`counter-button ${color}`}
+              data-flash={flash[group]}
+              data-decrement={decrementFlash[group]}
+              data-holding={holdingGroup === group}
+            >
+              <span className="counter-hold-bar" aria-hidden="true" />
+              <span className="counter-minus-badge" aria-hidden="true">−1</span>
+
+              <div className="counter-top-section">
+                <span className="counter-title">{label}</span>
+                {groupLatest && (
+                  <span
+                    className="counter-last-user"
+                    title={`Zuletzt: ${groupLatest.username || "Mitarbeiter"} um ${new Date(groupLatest.timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`}
+                  >
+                    Zuletzt: <strong>{groupLatest.username || "Mitarbeiter"}</strong> <span className="counter-last-time">({formatRelativeTime(groupLatest.timestamp)})</span>
+                  </span>
+                )}
+              </div>
+
+              <span className="counter-count">{ready ? counts[group] : "–"}</span>
+
+              <span className="counter-bottom-section">
+                <span className="counter-hold-hint" aria-hidden="true">
+                  {holdingGroup === group ? "−1 abziehen …" : "Halten: −1"}
+                </span>
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="count-actions" aria-label="Korrekturen">
