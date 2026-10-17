@@ -1098,16 +1098,114 @@ button:disabled { cursor: default; opacity: .4; }
   text-overflow: ellipsis;
 }
 
-/* Duplicate warning banner and Live Ticker on Counter */
-.recent-activity-bar {
+/* Floating Notifications & Alerts on Counter (Zero layout shift) */
+.counter-floating-alerts {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 62px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(calc(100% - 24px), 620px);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.counter-floating-alerts > * {
+  pointer-events: auto;
+  box-sizing: border-box;
+}
+
+.duplicate-warning-banner {
+  width: 100%;
+  background: rgba(30, 22, 10, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1.5px solid #f59e0b;
+  border-radius: 14px;
+  padding: 10px 14px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: #fef3c7;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  animation: float-slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-color-scheme: light) {
+  .duplicate-warning-banner {
+    background: rgba(254, 243, 199, 0.96);
+    color: #78350f;
+    border-color: #d97706;
+    box-shadow: 0 10px 24px rgba(217, 119, 6, 0.25);
+  }
+}
+@keyframes float-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.duplicate-undo-btn {
+  background: #f59e0b;
+  color: #1a1303;
+  border: none;
   font-size: 12px;
-  color: var(--muted);
-  min-height: 22px;
-  margin-bottom: -4px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.08s ease, background-color 0.15s ease;
+}
+.duplicate-undo-btn:active {
+  transform: scale(0.96);
+  background: #d97706;
+}
+
+.banner-close-btn {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.65;
+  font-size: 15px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1;
+}
+.banner-close-btn:hover {
+  opacity: 1;
+}
+
+.recent-activity-floating-pill {
+  background: rgba(19, 39, 49, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12px;
+  color: var(--text);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  animation: float-slide-down 0.2s ease;
+}
+@media (prefers-color-scheme: light) {
+  .recent-activity-floating-pill {
+    background: rgba(255, 255, 255, 0.94);
+    border-color: var(--line-strong);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+  }
 }
 .recent-activity-badge {
   font-weight: 600;
@@ -1119,52 +1217,32 @@ button:disabled { cursor: default; opacity: .4; }
 .recent-activity-other-device {
   color: var(--accent);
 }
-.duplicate-warning-banner {
-  background: rgba(245, 158, 11, 0.15);
-  border: 1.5px solid #f59e0b;
-  border-radius: 12px;
-  padding: 8px 12px;
+
+.event-counter-banner {
+  width: 100%;
+  background: rgba(16, 42, 54, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1.5px solid var(--accent);
+  border-radius: 14px;
+  padding: 9px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 12px;
-  color: var(--text);
-  margin-bottom: 4px;
-  animation: pulse-border 2s infinite ease-in-out;
-}
-@keyframes pulse-border {
-  0%, 100% { border-color: #f59e0b; }
-  50% { border-color: #fbbf24; }
-}
-.duplicate-undo-btn {
-  background: #f59e0b;
-  color: #1a1303;
-  border: none;
-  font-size: 12px;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.duplicate-undo-btn:active {
-  transform: scale(0.96);
-}
-
-/* Event banner on counter */
-.event-counter-banner {
-  background: linear-gradient(135deg, rgba(0, 124, 165, 0.2), rgba(255, 253, 36, 0.15));
-  border: 1px solid var(--accent);
-  border-radius: 12px;
-  padding: 8px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  animation: float-slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-color-scheme: light) {
+  .event-counter-banner {
+    background: rgba(240, 249, 255, 0.95);
+    border-color: #007ca5;
+    color: #0c4a6e;
+    box-shadow: 0 8px 20px rgba(0, 124, 165, 0.18);
+  }
 }
 .event-counter-banner span {
   display: flex;
@@ -1174,5 +1252,5 @@ button:disabled { cursor: default; opacity: .4; }
 .event-counter-banner small {
   font-size: 11px;
   font-weight: 400;
-  color: var(--muted);
+  opacity: 0.8;
 }

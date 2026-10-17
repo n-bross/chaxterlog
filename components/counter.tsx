@@ -330,47 +330,67 @@ export default function Counter({ user }: { user: { id: string; username: string
         </div>
       </header>
 
-      {/* Event banner if an event is registered on this day */}
-      {currentDayEvent && (
-        <div className="event-counter-banner" role="status">
-          <span>
-            <span>🎉</span>
-            <span>{currentDayEvent.title}</span>
-          </span>
-          {currentDayEvent.description && (
-            <small>{currentDayEvent.description}</small>
+      {/* Floating Alerts Container: Floats above without shifting the count buttons */}
+      {(currentDayEvent || (duplicateWarning && !dismissedDuplicate) || latestActiveVisit) && (
+        <div className="counter-floating-alerts" aria-live="polite">
+          {duplicateWarning && !dismissedDuplicate && (
+            <div className="duplicate-warning-banner" role="alert">
+              <span>
+                ⚠️ <strong>Mögliche Doppelzählung:</strong> 2× {duplicateWarning.group === "u15" ? "U15" : "Ü15"} innerhalb von {duplicateWarning.diffSeconds || 1}s erfasst ({duplicateWarning.user1} &amp; {duplicateWarning.user2})
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="duplicate-undo-btn"
+                  onClick={() => {
+                    undoGroup(duplicateWarning.group);
+                    setDismissedDuplicate(true);
+                  }}
+                >
+                  1× Abziehen (Undo)
+                </button>
+                <button
+                  type="button"
+                  className="banner-close-btn"
+                  onClick={() => setDismissedDuplicate(true)}
+                  title="Hinweis schließen"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
+          {currentDayEvent && (
+            <div className="event-counter-banner" role="status">
+              <span>
+                <span>🎉</span>
+                <span>{currentDayEvent.title}</span>
+                {currentDayEvent.description && (
+                  <small>· {currentDayEvent.description}</small>
+                )}
+              </span>
+              <button
+                type="button"
+                className="banner-close-btn"
+                onClick={() => setCurrentDayEvent(null)}
+                title="Ausblenden"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {latestActiveVisit && (
+            <div className="recent-activity-floating-pill">
+              <span className={`recent-activity-badge ${latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "recent-activity-other-device" : ""}`}>
+                {latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "📱 " : "✓ "}
+                Zuletzt: <strong>{latestActiveVisit.group === "u15" ? "U15" : "Ü15"}</strong> von {latestActiveVisit.username || "Mitarbeiter"} ({formatRelativeTime(latestActiveVisit.timestamp)})
+              </span>
+            </div>
           )}
         </div>
       )}
-
-      {/* Duplicate entry warning banner with instant 1-click Undo */}
-      {duplicateWarning && !dismissedDuplicate && (
-        <div className="duplicate-warning-banner" role="alert">
-          <span>
-            ⚠️ <strong>Mögliche Doppelzählung:</strong> 2× {duplicateWarning.group === "u15" ? "U15" : "Ü15"} innerhalb von {duplicateWarning.diffSeconds || 1}s erfasst ({duplicateWarning.user1} &amp; {duplicateWarning.user2})
-          </span>
-          <button
-            type="button"
-            className="duplicate-undo-btn"
-            onClick={() => {
-              undoGroup(duplicateWarning.group);
-              setDismissedDuplicate(true);
-            }}
-          >
-            1× Abziehen (Undo)
-          </button>
-        </div>
-      )}
-
-      {/* Subtle live recent activity feed */}
-      <div className="recent-activity-bar" aria-live="polite">
-        {latestActiveVisit && (
-          <span className={`recent-activity-badge ${latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "recent-activity-other-device" : ""}`}>
-            {latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "📱 " : "✓ "}
-            Zuletzt: <strong>{latestActiveVisit.group === "u15" ? "U15" : "Ü15"}</strong> von {latestActiveVisit.username || "Mitarbeiter"} ({formatRelativeTime(latestActiveVisit.timestamp)})
-          </span>
-        )}
-      </div>
 
       <div className="count-grid">
         {([ ["u15", "U15", "counter-blue"], ["o15", "Ü15", "counter-yellow"] ] as const).map(([group, label, color]) => (
