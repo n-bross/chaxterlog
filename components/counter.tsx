@@ -30,10 +30,15 @@ export default function Counter({ user }: { user: { id: string; username: string
   const selectedDayRef = useRef<string | null>(null);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [flash, setFlash] = useState<Record<AgeGroup, boolean>>({ u15: false, o15: false });
+  const [decrementFlash, setDecrementFlash] = useState<Record<AgeGroup, boolean>>({ u15: false, o15: false });
+  const [holdingGroup, setHoldingGroup] = useState<AgeGroup | null>(null);
   const [redoEvent, setRedoEvent] = useState<TrackEvent | null>(null);
   const [lastEvent, setLastEvent] = useState<TrackEvent | null>(null);
   const [feedback, setFeedback] = useState("");
   const timers = useRef<Partial<Record<AgeGroup, ReturnType<typeof setTimeout>>>>({});
+  const holdTimers = useRef<Record<AgeGroup, ReturnType<typeof setTimeout> | null>>({ u15: null, o15: null });
+  const isLongPressRef = useRef<Record<AgeGroup, boolean>>({ u15: false, o15: false });
+  const pointerStartPosRef = useRef<Record<AgeGroup, { x: number; y: number } | null>>({ u15: null, o15: null });
 
   const refresh = useCallback(() => {
     const date = new Date();
@@ -70,6 +75,7 @@ export default function Counter({ user }: { user: { id: string; username: string
     return () => {
       clearInterval(interval);
       Object.values(timers.current).forEach(clearTimeout);
+      Object.values(holdTimers.current).forEach((t) => { if (t) clearTimeout(t); });
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", onVisibility);
@@ -104,6 +110,30 @@ export default function Counter({ user }: { user: { id: string; username: string
     return { id: createId(), kind, timestamp: new Date().toISOString(), order: performance.timeOrigin + performance.now(), userId: user.id, username: user.username, deviceId: device.id, deviceName: device.name, platform: device.platform };
   }
 
+  function undoGroup(group: AgeGroup) {
+    if (selectedDayRef.current && selectedDayRef.current !== dayKey()) return;
+    let event: TrackEvent | null;
+    try {
+      event = undoLastClick(localStorage, dayKey(), correction("undo"), group);
+    } catch {
+      setStorageError("Rückgängig nicht möglich. Zählung unverändert.");
+      return;
+    }
+    refresh();
+    const groupLabel = group === "u15" ? "U15" : "Ü15";
+    if (!event) {
+      setFeedback(`${groupLabel}: Keine Besuche heute zum Abziehen.`);
+      try { navigator.vibrate?.([30, 40, 30]); } catch { /* Ignore */ }
+      return;
+    }
+    const currentCounts = readDay(localStorage).counts;
+    setFeedback(`${groupLabel}: 1 abgezogen (Besuch zurückgenommen). Stand: ${currentCounts[group]}.`);
+    setDecrementFlash((value) => ({ ...value, [group]: true }));
+    setTimeout(() => setDecrementFlash((value) => ({ ...value, [group]: false })), 350);
+    try { navigator.vibrate?.(60); } catch { /* Ignore */ }
+    window.dispatchEvent(new Event(LOCAL_CHANGE));
+  }
+
   function undo() {
     if (selectedDayRef.current && selectedDayRef.current !== dayKey()) return;
     let event: TrackEvent | null;
@@ -129,6 +159,61 @@ export default function Counter({ user }: { user: { id: string; username: string
     } catch { setStorageError("Wiederherstellen nicht möglich. Zählung unverändert."); }
   }
 
+  function handlePointerDown(group: AgeGroup, e: React.PointerEvent<HTMLButtonElement>) {
+    if (e.button !== 0) return;
+    if (!ready) return;
+    if (selectedDayRef.current && selectedDayRef.current !== dayKey()) return;
+
+    pointerStartPosRef.current[group] = { x: e.clientX, y: e.clientY };
+    isLongPressRef.current[group] = false;
+    setHoldingGroup(group);
+
+    if (holdTimers.current[group]) clearTimeout(holdTimers.current[group]!);
+    holdTimers.current[group] = setTimeout(() => {
+      isLongPressRef.current[group] = true;
+      setHoldingGroup(null);
+      undoGroup(group);
+    }, 500);
+  }
+
+  function handlePointerMove(group: AgeGroup, e: React.PointerEvent<HTMLButtonElement>) {
+    const start = pointerStartPosRef.current[group];
+    if (!start) return;
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 12) {
+      cancelHold(group);
+    }
+  }
+
+  function cancelHold(group: AgeGroup) {
+    if (holdTimers.current[group]) {
+      clearTimeout(holdTimers.current[group]!);
+      holdTimers.current[group] = null;
+    }
+    pointerStartPosRef.current[group] = null;
+    setHoldingGroup((current) => (current === group ? null : current));
+  }
+
+  function handlePointerUp(group: AgeGroup) {
+    if (holdTimers.current[group]) {
+      clearTimeout(holdTimers.current[group]!);
+      holdTimers.current[group] = null;
+    }
+    pointerStartPosRef.current[group] = null;
+    setHoldingGroup((current) => (current === group ? null : current));
+  }
+
+  function handleClick(group: AgeGroup, e: React.MouseEvent<HTMLButtonElement>) {
+    if (isLongPressRef.current[group]) {
+      isLongPressRef.current[group] = false;
+      return;
+    }
+    if (e.shiftKey || e.altKey) {
+      undoGroup(group);
+      return;
+    }
+    track(group);
+  }
+
   return (
     <main className="count-screen">
       <header className="count-header">
@@ -151,9 +236,32 @@ export default function Counter({ user }: { user: { id: string; username: string
       </header>
       <div className="count-grid">
         {([ ["u15", "U15", "counter-blue"], ["o15", "Ü15", "counter-yellow"] ] as const).map(([group, label, color]) => (
-          <button key={group} type="button" disabled={!ready} onClick={() => track(group)} aria-label={`${label}: einen Besuch für heute zählen. Stand am ${selectedDay}: ${counts[group]}`} className={`counter-button ${color}`} data-flash={flash[group]}>
+          <button
+            key={group}
+            type="button"
+            disabled={!ready}
+            onPointerDown={(e) => handlePointerDown(group, e)}
+            onPointerMove={(e) => handlePointerMove(group, e)}
+            onPointerUp={() => handlePointerUp(group)}
+            onPointerLeave={() => cancelHold(group)}
+            onPointerCancel={() => cancelHold(group)}
+            onContextMenu={(e) => e.preventDefault()}
+            onClick={(e) => handleClick(group, e)}
+            aria-label={`${label}: einen Besuch zählen (Tippen für +1, gedrückt halten zum Abziehen für -1). Stand am ${selectedDay}: ${counts[group]}`}
+            className={`counter-button ${color}`}
+            data-flash={flash[group]}
+            data-decrement={decrementFlash[group]}
+            data-holding={holdingGroup === group}
+          >
+            <span className="counter-hold-bar" aria-hidden="true" />
+            <span className="counter-minus-badge" aria-hidden="true">−1</span>
             <span className="counter-title">{label}</span>
-            <span className="counter-bottom"><span className="counter-count">{ready ? counts[group] : "–"}</span></span>
+            <span className="counter-bottom">
+              <span className="counter-count">{ready ? counts[group] : "–"}</span>
+              <span className="counter-hold-hint" aria-hidden="true">
+                {holdingGroup === group ? "−1 abziehen …" : "Halten: −1"}
+              </span>
+            </span>
           </button>
         ))}
       </div>

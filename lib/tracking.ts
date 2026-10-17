@@ -47,6 +47,7 @@ export function isTrackEvent(value: unknown): value is TrackEvent {
 export function readDay(storage: Storage, day = dayKey()) {
   const counts: Counts = { u15: 0, o15: 0 };
   let latest: { key: string; event: TrackEvent } | null = null;
+  const latestGroup: Record<AgeGroup, { key: string; event: TrackEvent } | null> = { u15: null, o15: null };
   const prefix = `${STORAGE_PREFIX}${day}:`;
   for (let index = 0; index < storage.length; index++) {
     const key = storage.key(index);
@@ -61,10 +62,13 @@ export function readDay(storage: Storage, day = dayKey()) {
         if (!latest || order >= (latest.event.order ?? Date.parse(latest.event.timestamp))) {
           latest = { key, event };
         }
+        if (!latestGroup[event.group] || order >= (latestGroup[event.group]!.event.order ?? Date.parse(latestGroup[event.group]!.event.timestamp))) {
+          latestGroup[event.group] = { key, event };
+        }
       }
     } catch { /* Ignore malformed entries; never erase saved clicks. */ }
   }
-  return { counts, latest };
+  return { counts, latest, latestGroup };
 }
 
 export function readCounts(storage: Storage, day = dayKey()): Counts {
@@ -87,9 +91,10 @@ export function readEvents(storage: Storage): TrackEvent[] {
 }
 
 // Read again at the moment of undo, so a stale tab does not undo an older click.
-export function undoLastClick(storage: Storage, day = dayKey(), correction?: Correction): TrackEvent | null {
-  const { latest } = readDay(storage, day);
-  if (!latest) return null;
-  storage.setItem(latest.key, JSON.stringify({ ...latest.event, cancelled: true, synced: false, ...(correction ? { corrections: [...latest.event.corrections ?? [], correction] } : {}) }));
-  return latest.event;
+export function undoLastClick(storage: Storage, day = dayKey(), correction?: Correction, group?: AgeGroup): TrackEvent | null {
+  const { latest, latestGroup } = readDay(storage, day);
+  const target = group ? latestGroup[group] : latest;
+  if (!target) return null;
+  storage.setItem(target.key, JSON.stringify({ ...target.event, cancelled: true, synced: false, ...(correction ? { corrections: [...target.event.corrections ?? [], correction] } : {}) }));
+  return target.event;
 }

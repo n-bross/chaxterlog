@@ -118,6 +118,15 @@ Die Prüfung läuft, solange die App geöffnet und sichtbar ist. Android kann ge
 
 ## Undo, Redo und Korrekturprotokoll
 
+### Direktes Abziehen per Long-Press (Lange gedrückt halten)
+
+Auf den großen Zählbuttons **U15** und **Ü15** kann ein Besuch direkt von der jeweiligen Gruppe abgezogen werden:
+- **Tippen / Klick:** Zählt +1 für die gewählte Gruppe.
+- **Lange gedrückt halten (500 ms):** Zieht gezielt einen Besuch der jeweiligen Altersgruppe ab (storniert den neuesten aktiven Besuch dieser Gruppe des heutigen Tages).
+- **Visuelles & haptisches Feedback:** Ein animierter Ladebalken am unteren Rand zeigt das Halten an; beim Erreichen der 500 ms erscheint ein rotes `−1`-Badge mit haptischem Feedback (Vibration) und Schüttelanimation.
+- **Tastatur:** Für Desktop-Bedienung zieht `Shift` + Klick oder `Alt` + Klick auf den Button ebenfalls direkt 1 ab.
+- **Redo & Audit:** Ein so abgezogener Besuch erzeugt einen regulären Undo-Eintrag im Audit-Protokoll und kann bei Bedarf über **Redo** jederzeit wiederhergestellt werden.
+
 Undo nimmt den neuesten aktiven Besuch des heutigen Tages zurück. Redo stellt den zuletzt zurückgenommenen, noch nicht wiederhergestellten Besuch dieses Tages wieder her. Neue Zählklicks löschen diese Möglichkeit nicht. Beide Knöpfe sind beim Ansehen früherer Tage deaktiviert. Die ursprüngliche Besuchszeit bleibt bei Redo erhalten; der wiederherstellende Benutzer und sein Gerät stehen am Ersatzdatensatz. Undo-/Redo-Ketten bleiben beliebig fortsetzbar und nach Neuladen verfügbar.
 
 Jeder tatsächlich verwendete Korrekturknopf erzeugt eine eigene Aktions-ID mit Typ, lokalem Betätigungszeitpunkt, Benutzer, Gerät und Server-Empfangszeit. Die Benutzerzuordnung neuer Aktionen kommt aus der authentifizierten Sitzung. Bereits gespeicherte Aktionen sind unveränderlich; Retries mit derselben ID erzeugen keinen zusätzlichen Protokolleintrag. Gleichzeitige Redo-Betätigungen können mehrere Bedienaktionen protokollieren, stellen aber nur einen Besuch wieder her.

@@ -65,6 +65,29 @@ test("undo follows rapid mixed clicks in order, survives reload and stops at zer
   assert.equal(storage.length, 3); // History plus two durable Undo tombstones.
 });
 
+test("undo targeting a specific group subtracts only that group even with newer clicks in the other group", () => {
+  const storage = storageMock({});
+  storage.setItem(`${STORAGE_PREFIX}2026-10-17:1`, JSON.stringify({ ...event, group: "u15", order: 10.1 }));
+  storage.setItem(`${STORAGE_PREFIX}2026-10-17:2`, JSON.stringify({ ...event, group: "o15", order: 10.2 }));
+  storage.setItem(`${STORAGE_PREFIX}2026-10-17:3`, JSON.stringify({ ...event, group: "u15", order: 10.3 }));
+
+  // Subtract U15 directly: should cancel event 3 (latest U15) while O15 remains 1
+  assert.equal(undoLastClick(storage, "2026-10-17", undefined, "u15")?.order, 10.3);
+  assert.deepEqual(readCounts(storage, "2026-10-17"), { u15: 1, o15: 1 });
+
+  // Subtract O15 directly: should cancel event 2 (the only O15)
+  assert.equal(undoLastClick(storage, "2026-10-17", undefined, "o15")?.order, 10.2);
+  assert.deepEqual(readCounts(storage, "2026-10-17"), { u15: 1, o15: 0 });
+
+  // Subtract O15 again: nothing left for O15, returns null and counts remain untouched
+  assert.equal(undoLastClick(storage, "2026-10-17", undefined, "o15"), null);
+  assert.deepEqual(readCounts(storage, "2026-10-17"), { u15: 1, o15: 0 });
+
+  // Subtract remaining U15
+  assert.equal(undoLastClick(storage, "2026-10-17", undefined, "u15")?.order, 10.1);
+  assert.deepEqual(readCounts(storage, "2026-10-17"), { u15: 0, o15: 0 });
+});
+
 test("failed cancellation write leaves counts intact and reports an error", () => {
   const storage = storageMock({ [`${STORAGE_PREFIX}2026-10-17:a`]: JSON.stringify(event) });
   storage.setItem = () => { throw new Error("Storage blocked"); };
