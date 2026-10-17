@@ -614,3 +614,143 @@ button:disabled { cursor: default; opacity: .4; }
   padding: 6px 12px;
   font-size: 13px;
 }
+
+/* Support & Diagnostics Styles */
+.card-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.badge-highlight {
+  background: #e5484d;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.badge-subtle {
+  background: var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.reports-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.report-item {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  transition: opacity 0.15s ease;
+}
+.report-resolved {
+  opacity: 0.65;
+}
+.report-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.report-time {
+  font-weight: 600;
+  color: var(--text);
+}
+.report-device {
+  color: var(--text);
+}
+.status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+}
+.pill-online {
+  background: rgba(21, 155, 103, 0.15);
+  color: #159b67;
+}
+.pill-offline {
+  background: rgba(206, 103, 42, 0.15);
+  color: #ce672a;
+}
+.pill-warning {
+  background: rgba(229, 72, 77, 0.15);
+  color: #e5484d;
+}
+.report-notes {
+  margin: 8px 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.report-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.btn-small {
+  min-height: 36px !important;
+  padding: 6px 12px !important;
+  font-size: 13px !important;
+  width: auto !important;
+}
+.btn-danger {
+  color: #e5484d !important;
+  border-color: rgba(229, 72, 77, 0.3) !important;
+}
+.btn-danger:active {
+  background: rgba(229, 72, 77, 0.1) !important;
+}
+.report-detail-box {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line-strong);
+  font-size: 13px;
+}
+.report-detail-box h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+.raw-json-details {
+  margin-top: 8px;
+  cursor: pointer;
+}
+.raw-json-details summary {
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.raw-json-details pre {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  padding: 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 11px;
+  max-height: 220px;
+  color: var(--text);
+  margin: 0;
+}

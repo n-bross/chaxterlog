@@ -6,11 +6,17 @@ import { CHECK_UPDATE } from "@/lib/app-update";
 import { authClient } from "@/lib/auth-client";
 import { getDevice, renameDevice, type Device } from "@/lib/device";
 import { readRecords } from "@/lib/sync-state";
+import { sendDiagnosticReport } from "@/lib/support";
 
 export default function Account({ user }: { user: { username: string; role: string } }) {
   const [device, setDevice] = useState<Device | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Support / Diagnostic state
+  const [supportNotes, setSupportNotes] = useState("");
+  const [supportBusy, setSupportBusy] = useState(false);
+  const [supportMsg, setSupportMsg] = useState("");
 
   useEffect(() => {
     try {
@@ -68,6 +74,21 @@ export default function Account({ user }: { user: { username: string; role: stri
     }
   }
 
+  async function handleSendSupport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSupportBusy(true);
+    setSupportMsg("");
+    try {
+      const res = await sendDiagnosticReport(supportNotes);
+      setSupportMsg("✓ Diagnosebericht erfolgreich gesendet. Der Admin kann den Zustand nun in der Admin-Ansicht prüfen.");
+      setSupportNotes("");
+    } catch (err) {
+      setSupportMsg(err instanceof Error ? err.message : "Diagnosebericht konnte nicht übertragen werden.");
+    } finally {
+      setSupportBusy(false);
+    }
+  }
+
   async function logout() {
     setBusy(true);
     try {
@@ -114,6 +135,29 @@ export default function Account({ user }: { user: { username: string; role: stri
             Abmelden
           </button>
         </div>
+      </section>
+
+      <section className="manage-card">
+        <h2>Hilfe & Diagnose senden</h2>
+        <p className="muted">
+          Falls auf diesem Gerät Probleme auftreten (z. B. Synchronisation hängt oder Zählerwerte unklar), kannst du hier einen Diagnosebericht direkt an den Administrator senden.
+        </p>
+        <form onSubmit={handleSendSupport}>
+          <label>
+            Was ist das Problem? (optional)
+            <textarea
+              rows={3}
+              value={supportNotes}
+              onChange={(e) => setSupportNotes(e.target.value)}
+              placeholder="Z. B. Der grüne Punkt erscheint nicht, falsche Klickzahl etc."
+              maxLength={2000}
+            />
+          </label>
+          <button className="primary-button" disabled={supportBusy}>
+            {supportBusy ? "Wird gesendet …" : "Diagnosebericht an Admin senden"}
+          </button>
+        </form>
+        {supportMsg && <p role="status" className="manage-message">{supportMsg}</p>}
       </section>
 
       <section className="manage-card">
