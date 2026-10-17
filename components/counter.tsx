@@ -266,8 +266,26 @@ export default function Counter({ user }: { user: { id: string; username: string
         ))}
       </div>
       <div className="count-actions" aria-label="Korrekturen">
-        <button type="button" onClick={undo} disabled={!ready || !lastEvent || selectedDay !== (now ? dayKey(now) : "")} className="undo-button"><Icon name="undo" className="size-8" />Undo</button>
-        <button type="button" onClick={redo} disabled={!ready || !redoEvent || selectedDay !== (now ? dayKey(now) : "")} className="undo-button redo-button"><Icon name="redo" className="size-8" />Redo</button>
+        <button
+          type="button"
+          onClick={redo}
+          disabled={!ready || !redoEvent || selectedDay !== (now ? dayKey(now) : "")}
+          className="undo-button redo-button"
+          aria-label="Redo: Zuletzt stornierten Besuch wiederherstellen"
+        >
+          <Icon name="redo" className="size-6" />
+          <span>Redo</span>
+        </button>
+        <button
+          type="button"
+          onClick={undo}
+          disabled={!ready || !lastEvent || selectedDay !== (now ? dayKey(now) : "")}
+          className="undo-button main-undo-button"
+          aria-label="Undo: Letzten Besuch rückgängig machen"
+        >
+          <Icon name="undo" className="size-8" />
+          <span>Undo</span>
+        </button>
       </div>
       <div className="sr-only" aria-live="polite" aria-atomic="true">{feedback}</div>
       {syncStatus.state === "conflict" && <div role="alert" className="error-message">{syncStatus.message} <Link className="underline" href="/login">Anmelden</Link></div>}

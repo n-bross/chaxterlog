@@ -112,7 +112,19 @@ button:disabled { cursor: default; opacity: .4; }
   display: inline-flex; align-items: center; justify-content: center; gap: 10px;
   border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 16px;
 }
-.undo-button { color: var(--accent); flex: 1; min-height: clamp(120px, 20dvh, 176px); padding: 20px; font-size: 28px; font-weight: 600; }
+.undo-button {
+  color: var(--accent); min-height: clamp(120px, 20dvh, 176px); padding: 20px 14px; font-weight: 600;
+  transition: opacity 120ms ease-out, background-color 120ms ease-out;
+}
+.main-undo-button {
+  flex: 2.2; font-size: clamp(24px, 4.5vw, 32px);
+}
+.redo-button {
+  flex: 1; font-size: clamp(16px, 2.8vw, 20px); gap: 6px; padding: 16px 10px; opacity: .88;
+}
+.redo-button:disabled {
+  opacity: .32;
+}
 .stats-button { min-height: 52px; padding: 14px 20px; font-size: 14px; font-weight: 500; }
 .undo-button:active, .stats-button:active { background: var(--line); }
 .error-message { padding: 12px; border: 1px solid #dd7b63; border-radius: 12px; font-size: 13px; }
