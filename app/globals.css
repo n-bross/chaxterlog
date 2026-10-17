@@ -14,10 +14,13 @@
     color-scheme: dark;
   }
 }
+html, body, button, input, select, textarea {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
 html { background: var(--bg); -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; overscroll-behavior: none; }
-body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: var(--text); background: var(--bg); }
+body { margin: 0; color: var(--text); background: var(--bg); }
 button, a { touch-action: manipulation; }
-button { cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+button { cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; font-family: inherit; }
 a { color: inherit; text-decoration: none; }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid var(--text); outline-offset: 5px; }
 .count-screen {
@@ -49,7 +52,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 }
 .counter-blue { --press-feedback: #fffd24; background: #007ca5; color: #ffffff; }
 .counter-yellow { --press-feedback: #007ca5; background: #fffd24; color: #132731; }
-.counter-title { margin: auto; width: 100%; text-align: center; font-size: clamp(64px, min(18vw, 28vh), 136px); line-height: 1; letter-spacing: -.05em; font-weight: 800; }
+.counter-title { margin: auto; width: 100%; text-align: center; font-family: inherit; font-size: clamp(48px, min(14vw, 20vh), 92px); line-height: 1; letter-spacing: normal; font-weight: 700; }
 .counter-bottom { display: flex; width: 100%; align-items: flex-end; justify-content: space-between; gap: 8px; }
 .counter-count { font-size: clamp(24px, 5vw, 44px); font-variant-numeric: tabular-nums; font-weight: 500; opacity: .7; line-height: 1; }
 .counter-hold-hint {
@@ -112,14 +115,14 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
   transform: translateY(0) scale(1);
 }
 button:disabled { cursor: default; opacity: .4; }
-.count-actions { display: flex; align-items: stretch; gap: 12px; flex-shrink: 0; height: clamp(50px, 9dvh, 64px); min-height: 48px; }
+.count-actions { display: flex; align-items: stretch; gap: 12px; flex-shrink: 0; height: clamp(66px, 12vh, 86px); min-height: 60px; }
 .undo-button, .stats-button {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 16px;
 }
 .undo-button {
-  color: var(--accent); min-height: 0; height: 100%; padding: 8px 14px; font-weight: 600;
-  font-size: clamp(16px, 2.8vw, 20px);
+  color: var(--accent); min-height: 0; height: 100%; padding: 10px 16px; font-weight: 600; font-family: inherit;
+  font-size: clamp(18px, 3.2vw, 22px);
   transition: opacity 120ms ease-out, background-color 120ms ease-out;
 }
 .main-undo-button {
@@ -154,8 +157,9 @@ button:disabled { cursor: default; opacity: .4; }
 }
 @media (max-height: 500px) {
   .count-screen { padding-top: calc(8px + env(safe-area-inset-top)); padding-bottom: calc(8px + env(safe-area-inset-bottom)); gap: 8px; }
-  .undo-button { min-height: 44px; height: 46px; font-size: 15px; }
-  .counter-title { font-size: clamp(52px, min(18vw, 28vh), 96px); }
+  .count-actions { height: 56px; min-height: 52px; }
+  .undo-button { min-height: 0; height: 100%; font-size: 16px; padding: 8px 12px; }
+  .counter-title { font-size: clamp(44px, min(14vw, 20vh), 72px); }
   .counter-button { padding: 10px 14px; }
 }
 @media (max-width: 380px) {
