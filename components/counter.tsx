@@ -338,21 +338,34 @@ export default function Counter({ user }: { user: { id: string; username: string
               setEventSaveError(null);
               setShowEventModal(true);
             }}
-            className="stats-button"
+            className={`stats-button ${currentDayEvent ? "stats-button-event" : ""}`}
             aria-label="Event eintragen"
-            title="Event für diesen Tag eintragen"
+            title={currentDayEvent ? `Event: ${currentDayEvent.title}` : "Event für diesen Tag eintragen"}
           >
             <span>📅</span>
-            <span className="stats-label">Events</span>
+            <span className="stats-label">{currentDayEvent ? currentDayEvent.title : "Events"}</span>
           </button>
           <Link href="/statistik" className="stats-button" aria-label="Statistik">
             <Icon name="stats" className="size-5" />
             <span className="stats-label">Statistik</span>
           </Link>
         </nav>
-        <output className="day-total" aria-label={`Gesamtzahl am ${selectedDay}: ${counts.u15 + counts.o15}`} aria-live="polite">
-          {ready ? counts.u15 + counts.o15 : "–"}
-        </output>
+        <div className="count-header-center">
+          <output className="day-total" aria-label={`Gesamtzahl am ${selectedDay}: ${counts.u15 + counts.o15}`} aria-live="polite">
+            {ready ? counts.u15 + counts.o15 : "–"}
+          </output>
+          {latestActiveVisit && (
+            <div
+              className="recent-activity-compact"
+              title={`Letzter Klick: ${latestActiveVisit.group === "u15" ? "U15" : "Ü15"} von ${latestActiveVisit.username || "Mitarbeiter"} (${formatRelativeTime(latestActiveVisit.timestamp)})`}
+            >
+              <span className={`recent-activity-badge ${latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "recent-activity-other-device" : ""}`}>
+                {latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "📱 " : "✓ "}
+                Zuletzt: <strong>{latestActiveVisit.group === "u15" ? "U15" : "Ü15"}</strong> <span className="recent-activity-user">von {latestActiveVisit.username || "Mitarbeiter"}</span> <span className="recent-activity-time">({formatRelativeTime(latestActiveVisit.timestamp)})</span>
+              </span>
+            </div>
+          )}
+        </div>
         <div className="count-header-date">
           <label className="date-control">
             <time dateTime={selectedDay || undefined}>
@@ -376,8 +389,8 @@ export default function Counter({ user }: { user: { id: string; username: string
         </div>
       </header>
 
-      {/* Floating Alerts Container: Floats above without shifting the count buttons */}
-      {(currentDayEvent || (duplicateWarning && !dismissedDuplicate) || latestActiveVisit) && (
+      {/* Floating Alerts Container: Only for temporary warnings or active event banner */}
+      {(currentDayEvent || (duplicateWarning && !dismissedDuplicate)) && (
         <div className="counter-floating-alerts" aria-live="polite">
           {duplicateWarning && !dismissedDuplicate && (
             <div className="duplicate-warning-banner" role="alert">
@@ -424,15 +437,6 @@ export default function Counter({ user }: { user: { id: string; username: string
               >
                 ✕
               </button>
-            </div>
-          )}
-
-          {latestActiveVisit && (
-            <div className="recent-activity-floating-pill">
-              <span className={`recent-activity-badge ${latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "recent-activity-other-device" : ""}`}>
-                {latestActiveVisit.userId && latestActiveVisit.userId !== user.id ? "📱 " : "✓ "}
-                Zuletzt: <strong>{latestActiveVisit.group === "u15" ? "U15" : "Ü15"}</strong> von {latestActiveVisit.username || "Mitarbeiter"} ({formatRelativeTime(latestActiveVisit.timestamp)})
-              </span>
             </div>
           )}
         </div>

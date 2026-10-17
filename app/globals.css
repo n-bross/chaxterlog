@@ -131,19 +131,110 @@ input:disabled, select:disabled {
 }
 
 .count-screen {
-  display: flex; flex-direction: column; gap: clamp(8px, 1.8dvh, 16px);
+  display: flex; flex-direction: column; gap: clamp(6px, 1.2dvh, 10px);
   width: 100%; height: 100dvh; max-height: 100dvh; margin: 0 auto; box-sizing: border-box;
-  padding: calc(10px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
+  padding: calc(6px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
 }
-.count-header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; flex-shrink: 0; gap: 8px; }
-.count-header-actions { display: flex; align-items: center; gap: 6px; justify-self: start; }
-.count-header-actions .account-button { flex-shrink: 0; }
-.count-header .stats-button { justify-self: start; min-height: 44px; padding: 8px 12px; gap: 6px; font-size: 12px; flex-shrink: 0; }
-.count-header .stats-button svg { flex-shrink: 0; }
-.day-total { color: var(--accent); min-width: 48px; text-align: center; font-size: clamp(28px, 5vw, 42px); line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; }
-.count-header-date { display: flex; align-items: center; justify-content: flex-end; gap: 8px; justify-self: end; }
-.count-header-date .date-control { width: auto; max-width: none; }
-.count-header-date .sync-status { flex-shrink: 0; }
+.count-header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; flex-shrink: 0; gap: 8px; min-height: 34px; }
+.count-header-actions { display: flex; align-items: center; gap: 5px; justify-self: start; }
+.count-header-actions .account-button {
+  min-width: 34px;
+  width: 34px;
+  min-height: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  flex-shrink: 0;
+  padding: 0;
+}
+.count-header-actions .account-button:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.count-header .stats-button {
+  justify-self: start;
+  min-height: 34px;
+  height: 34px;
+  padding: 4px 10px;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+  border-radius: 9px;
+}
+.count-header .stats-button svg { width: 15px; height: 15px; flex-shrink: 0; }
+.count-header .stats-button-event {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0, 124, 165, 0.08);
+}
+.count-header-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+.day-total {
+  color: var(--accent);
+  min-width: 32px;
+  text-align: center;
+  font-size: clamp(22px, 3.2vw, 28px);
+  line-height: 1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.recent-activity-compact {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--text);
+  background: rgba(19, 39, 49, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 10px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+  animation: float-slide-down 0.15s ease-out;
+}
+@media (prefers-color-scheme: light) {
+  .recent-activity-compact {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: var(--line-strong);
+    color: var(--text);
+  }
+}
+@media (max-width: 760px) {
+  .count-header-center {
+    flex-direction: column;
+    gap: 1px;
+  }
+  .day-total {
+    font-size: 20px;
+  }
+  .recent-activity-compact {
+    font-size: 10.5px;
+    padding: 1px 7px;
+    max-width: 170px;
+  }
+  .recent-activity-user {
+    display: none;
+  }
+}
+.count-header-date { display: flex; align-items: center; justify-content: flex-end; gap: 6px; justify-self: end; }
+.count-header-date .date-control { width: auto; max-width: none; min-height: 34px; height: 34px; font-size: 12.5px; font-weight: 600; padding: 0 4px; border-radius: 8px; }
+.count-header-date .sync-status { flex-shrink: 0; min-height: 34px; display: inline-flex; align-items: center; }
 .date-control { position: relative; display: flex; align-items: center; justify-content: flex-end; justify-self: end; min-width: 0; min-height: 44px; border-radius: 8px; color: var(--muted); font-size: 14px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .date-control:focus-within { outline: 3px solid var(--text); outline-offset: 5px; }
 .count-date { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; font-size: 16px; cursor: pointer; padding: 0; border: none; }
@@ -1101,15 +1192,15 @@ button:disabled { cursor: default; opacity: .4; }
 /* Floating Notifications & Alerts on Counter (Zero layout shift) */
 .counter-floating-alerts {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + 62px);
+  top: calc(env(safe-area-inset-top) + 48px);
   left: 50%;
   transform: translateX(-50%);
-  width: min(calc(100% - 24px), 620px);
+  width: min(calc(100% - 24px), 540px);
   z-index: 200;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   pointer-events: none;
 }
 .counter-floating-alerts > * {
@@ -1124,12 +1215,12 @@ button:disabled { cursor: default; opacity: .4; }
   -webkit-backdrop-filter: blur(12px);
   border: 1.5px solid #f59e0b;
   border-radius: 14px;
-  padding: 10px 14px;
+  padding: 6px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
+  gap: 10px;
+  font-size: 12px;
   color: #fef3c7;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   animation: float-slide-down 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1225,7 +1316,7 @@ button:disabled { cursor: default; opacity: .4; }
   -webkit-backdrop-filter: blur(12px);
   border: 1.5px solid var(--accent);
   border-radius: 14px;
-  padding: 9px 14px;
+  padding: 5px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
