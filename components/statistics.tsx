@@ -4,6 +4,7 @@ import Link from "next/link";
 import ChaxterLogo from "@/components/chaxter-logo";
 import ActivityLog from "@/components/activity-log";
 import EventsManager from "@/components/events-manager";
+import EventPerformance from "@/components/event-performance";
 import { readRecords, type VisitRecord } from "@/lib/sync-state";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { dayKey, readEvents, STORAGE_PREFIX, type TrackEvent } from "@/lib/tracking";
@@ -410,6 +411,16 @@ export default function Statistics() {
           )}
 
           {/* Events Manager section for entering events or importing lists/calendars */}
+          {/* Event Performance Analysis: Best Single Events & Event Categories */}
+          <EventPerformance
+            events={eventsList}
+            visits={events}
+            onSelectDay={(d) => {
+              setPeriod("day");
+              setAnchor(d);
+            }}
+          />
+
           <div id="events">
             <EventsManager
               highlightDate={anchor}
