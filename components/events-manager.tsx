@@ -18,11 +18,17 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
 
-  // Single event inputs
+  // Single event inputs (Add)
   const [newDate, setNewDate] = useState(highlightDate || new Date().toISOString().slice(0, 10));
   const [newTitle, setNewTitle] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Edit event inputs
+  const [editingEvent, setEditingEvent] = useState<ChaxterEvent | null>(null);
+  const [editDate, setEditDate] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
 
   // Import states
   const [importText, setImportText] = useState("");
@@ -48,6 +54,19 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
+
+  // Close modals on Escape key
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (editingEvent) setEditingEvent(null);
+        if (showAddModal) setShowAddModal(false);
+        if (showImportModal) setShowImportModal(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [editingEvent, showAddModal, showImportModal]);
 
   // Update preview when importText changes
   useEffect(() => {
@@ -88,6 +107,43 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
       await loadEvents();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Fehler beim Speichern");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleStartEdit(item: ChaxterEvent) {
+    setEditingEvent(item);
+    setEditDate(item.date);
+    setEditTitle(item.title);
+    setEditDesc(item.description || "");
+    setError(null);
+  }
+
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingEvent || !editTitle.trim() || !editDate) return;
+
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/events", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingEvent.id,
+          date: editDate,
+          title: editTitle.trim(),
+          description: editDesc.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Speichern fehlgeschlagen");
+
+      setEditingEvent(null);
+      await loadEvents();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Fehler beim Speichern der Änderung");
     } finally {
       setIsSubmitting(false);
     }
@@ -221,15 +277,50 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
                       <span className="event-date-text">{formatDateDisplay(item.date)}</span>
                       {isToday && <span className="event-badge-today">Heute</span>}
                     </div>
-                    <div className="event-content-col">
-                      <strong className="event-title">{item.title}</strong>
+                    <div
+                      className="event-content-col is-clickable group"
+                      onClick={() => handleStartEdit(item)}
+                      title="Klicken zum Bearbeiten des Namens"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <strong className="event-title group-hover:text-[var(--accent)] transition-colors">
+                          {item.title}
+                        </strong>
+                        <span className="text-xs text-muted opacity-0 group-hover:opacity-100 transition-opacity">
+                          ✎
+                        </span>
+                      </div>
                       {item.description && <span className="event-desc">{item.description}</span>}
                     </div>
                     <div className="event-action-col">
                       <button
                         type="button"
+                        className="event-edit-btn"
+                        title="Event bearbeiten"
+                        aria-label={`Event "${item.title}" bearbeiten`}
+                        onClick={() => handleStartEdit(item)}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                          <path d="m15 5 4 4" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
                         className="event-delete-btn"
                         title="Event löschen"
+                        aria-label={`Event "${item.title}" löschen`}
                         onClick={() => handleDelete(item.id, item.title)}
                       >
                         ✕
@@ -243,11 +334,95 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
         )}
       </div>
 
+      {/* Edit Event Modal */}
+      {editingEvent && (
+        <div className="modal-backdrop" onClick={() => setEditingEvent(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="modal-title font-semibold text-lg flex items-center gap-2">
+                <span>✏️</span> Event bearbeiten
+              </h4>
+              <button
+                type="button"
+                className="event-delete-btn text-base leading-none p-1"
+                onClick={() => setEditingEvent(null)}
+                title="Schließen"
+                aria-label="Schließen"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveEdit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium mb-1">Datum:</label>
+                <input
+                  type="date"
+                  required
+                  value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Name / Bezeichnung:</label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="z. B. Sommerfest, Kickerturnier, Kinoabend"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">Notiz / Beschreibung (optional):</label>
+                <input
+                  type="text"
+                  placeholder="z. B. 14:00 - 18:00 Uhr, mit Grillen"
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
+                />
+              </div>
+              <div className="modal-actions flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setEditingEvent(null)}
+                  disabled={isSubmitting}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={isSubmitting || !editTitle.trim()}
+                >
+                  {isSubmitting ? "Wird gespeichert …" : "Änderung speichern"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Add Single Event Modal */}
       {showAddModal && (
         <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h4 className="modal-title font-semibold text-lg mb-3">Neues Event anlegen</h4>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="modal-title font-semibold text-lg">Neues Event anlegen</h4>
+              <button
+                type="button"
+                className="event-delete-btn text-base leading-none p-1"
+                onClick={() => setShowAddModal(false)}
+                title="Schließen"
+                aria-label="Schließen"
+              >
+                ✕
+              </button>
+            </div>
             <form onSubmit={handleAddSingle} className="space-y-3">
               <div>
                 <label className="block text-xs font-medium mb-1">Datum:</label>
@@ -306,7 +481,18 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
       {showImportModal && (
         <div className="modal-backdrop" onClick={() => setShowImportModal(false)}>
           <div className="modal-content modal-wide" onClick={(e) => e.stopPropagation()}>
-            <h4 className="modal-title font-semibold text-lg mb-2">Events importieren</h4>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="modal-title font-semibold text-lg">Events importieren</h4>
+              <button
+                type="button"
+                className="event-delete-btn text-base leading-none p-1"
+                onClick={() => setShowImportModal(false)}
+                title="Schließen"
+                aria-label="Schließen"
+              >
+                ✕
+              </button>
+            </div>
             <p className="text-xs text-muted mb-3">
               Unterstützt Kalender-Exporte (<strong>.ics</strong> von Apple Kalender / Google Kalender), CSV oder kopierte Excel-Listen (Spalten: Datum, Titel, Beschreibung).
             </p>
@@ -374,7 +560,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
                   Abbrechen
                 </button>
                 <button
-                  type="button"
+                  type="submit"
                   className="primary-button"
                   onClick={handleExecuteImport}
                   disabled={isSubmitting || parsedPreview.length === 0}
