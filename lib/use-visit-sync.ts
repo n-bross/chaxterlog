@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { LOCAL_CHANGE, SyncError, synchronize } from "./sync";
 import { getDevice } from "./device";
 import { readRecords } from "./sync-state";
+import { syncDelay } from "./sync-schedule";
 
 export type SyncState = { state: "connecting" | "synced" | "pending" | "offline" | "conflict"; pending: number; message?: string };
 
@@ -13,11 +14,20 @@ export function useVisitSync(onChange: () => void): SyncState {
     let stopped = false;
     let running = false;
     let again = false;
+    let lastActivity = Date.now();
+    let failures = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const controllers = new Set<AbortController>();
     const pendingCount = () => readRecords(localStorage).filter((event) => !event.synced).length;
+    const schedule = () => {
+      clearTimeout(timer);
+      if (!stopped) timer = setTimeout(() => { void tick(); }, syncDelay(Date.now() - lastActivity, failures));
+    };
     async function tick() {
-      if (stopped || document.visibilityState === "hidden") return;
+      if (stopped) return;
+      if (document.visibilityState === "hidden") { schedule(); return; }
       if (running) { again = true; return; }
+      clearTimeout(timer);
       running = true;
       try {
         const pending = pendingCount();
@@ -33,11 +43,13 @@ export function useVisitSync(onChange: () => void): SyncState {
           }
           finally { clearTimeout(timer); controllers.delete(controller); }
         }, getDevice());
+        failures = 0;
         if (!stopped) {
           setStatus({ state: left ? "pending" : "synced", pending: left });
           onChange();
         }
       } catch (error) {
+        failures++;
         if (!stopped) {
           let pending = 0;
           try { pending = pendingCount(); } catch { /* Main page displays storage failures. */ }
@@ -48,15 +60,22 @@ export function useVisitSync(onChange: () => void): SyncState {
       } finally {
         running = false;
         if (again && !stopped) { again = false; void tick(); }
+        else schedule();
       }
     }
-    const changed = () => { onChange(); void tick(); };
+    const activity = () => {
+      const wasIdle = Date.now() - lastActivity >= 60_000;
+      lastActivity = Date.now();
+      if (wasIdle && !running) schedule();
+    };
+    const changed = () => { activity(); onChange(); void tick(); };
     const visible = () => { if (document.visibilityState === "visible") changed(); };
     const storage = (event: StorageEvent) => {
       if (event.key === null || event.key.startsWith("chaxterlog:event:")) changed();
     };
     void tick();
-    const interval = setInterval(() => { void tick(); }, 3_000);
+    window.addEventListener("pointerdown", activity, { passive: true });
+    window.addEventListener("keydown", activity);
     window.addEventListener(LOCAL_CHANGE, changed);
     window.addEventListener("online", changed);
     window.addEventListener("focus", changed);
@@ -64,7 +83,9 @@ export function useVisitSync(onChange: () => void): SyncState {
     document.addEventListener("visibilitychange", visible);
     return () => {
       stopped = true;
-      clearInterval(interval);
+      clearTimeout(timer);
+      window.removeEventListener("pointerdown", activity);
+      window.removeEventListener("keydown", activity);
       controllers.forEach((controller) => controller.abort());
       window.removeEventListener(LOCAL_CHANGE, changed);
       window.removeEventListener("online", changed);

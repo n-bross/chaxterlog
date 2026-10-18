@@ -57,3 +57,4 @@ if (inserted.length) {
 }
 console.log("ChaxterLog-Datenbank bereit.");
 await import("./setup-corrections.mjs");
+await import("./setup-visit-sync.mjs");

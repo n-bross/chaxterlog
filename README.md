@@ -56,14 +56,14 @@ Die Gruppengrenze genau 15-jähriger Besucher muss fachlich festgelegt werden. G
 
 ## Gemeinsamer Sync und Offline-Warteschlange
 
-- Sichtbare Ansichten gleichen sich alle drei Sekunden, bei Fokus und bei Wiederkehr der Verbindung ab. Gleiche API und Datenbank bedeuten gleiche Zählung in unterschiedlichen Browsern und Geräten. Ein kleiner grüner Punkt zeigt erfolgreichen Abgleich, „Offline“ einen fehlgeschlagenen Abgleich.
+- Sichtbare Ansichten gleichen sich während der Bedienung alle drei Sekunden ab. Nach einer Minute ohne Bedienung sinkt die Häufigkeit auf alle 30 Sekunden. Hintergrundansichten fragen nicht ab; neue Klicks, Fokus und die Wiederkehr der Verbindung lösen sofort einen Abgleich aus. Bei Fehlern steigt die Wartezeit schrittweise auf maximal eine Minute. Gleiche API und Datenbank bedeuten gleiche Zählung in unterschiedlichen Browsern und Geräten. Ein kleiner grüner Punkt zeigt erfolgreichen Abgleich, „Offline“ einen fehlgeschlagenen Abgleich.
 - Jeder Klick wird vor der sichtbaren Erhöhung synchron in localStorage gespeichert, mit UUID und ISO-Zeitstempel. Eine persistente Warteschlange sendet fehlgeschlagene Übertragungen erneut.
 - PostgreSQL dedupliziert über die UUID. Undo bleibt als permanente Stornierung gespeichert. Redo erstellt einen verknüpften Ersatzdatensatz mit deterministischer UUID v5 und dem ursprünglichen Besuchszeitpunkt. So können alte Uploads Stornierungen nicht aufheben und gleichzeitige Redo-Klicks auf mehreren Geräten zählen denselben wiederhergestellten Besuch nur einmal. Andere Geräte übernehmen beide Korrekturen.
 - Vorhandene lokale Klicks werden nach dem Update und Login automatisch hochgeladen. Jede bisher verwendete Browseransicht muss einmal geöffnet werden. Ihr ursprünglicher Benutzer ist unbekannt; sie werden als Altbestand markiert, und der importierende Benutzer wird separat protokolliert. Bestehende, unabhängig doppelt erfasste Besuche mit verschiedenen IDs können nicht automatisch dedupliziert werden.
 - Neue Klicks speichern die angemeldete Benutzer-ID und den Benutzernamen. Der Server übernimmt den Benutzer aus der Sitzung, nicht aus frei übermittelten Feldern. Stornierende Benutzer und Serverzeitpunkt werden separat festgehalten.
 - Browserdaten nicht löschen, solange Klicks offen sind. Ein Wechsel der Website-Adresse oder des Browsers hat zunächst einen getrennten lokalen Speicher: zuerst die alte Ansicht online synchronisieren.
 - Die App benötigt beim Laden/Neuladen eine Verbindung. Eine bereits geladene Seite kann bei Verbindungsverlust weiter lokal zählen. Es gibt keinen Service Worker und keine garantierte Offline-Neuladung.
-- Die aktuelle Prototyp-Version lädt bei jedem Abgleich den gesamten Ereignisbestand. Bei größeren Beständen auf inkrementellen Abgleich umstellen.
+- Der erste Abgleich lädt den vollständigen Besuchsbestand. Danach speichert der Browser einen Änderungsstand zusammen mit den lokalen Daten und fordert nur neue oder geänderte Besuche einschließlich Korrekturen an. Ohne Änderungen bleibt die Antwort klein, unabhängig von der Größe des Bestands. Der Änderungsstand wird erst nach erfolgreichem lokalem Speichern übernommen und bleibt beim Neuladen erhalten. Alte Tablet-Zeitstempel beeinflussen die Reihenfolge des Abgleichs nicht. Eine serverseitige, transaktionale Versionsnummer verhindert, dass parallel eintreffende Uploads übersprungen werden. Besuche werden weiterhin storniert, nicht physisch gelöscht.
 
 ## Geräte
 
@@ -81,7 +81,7 @@ CSV verwendet UTF-8 mit BOM, Semikolon, korrektes Quoting und Schutz vor Tabelle
 
 ## API
 
-- `GET /api/track`: vollständige Ereignisliste einschließlich Stornierungen.
+- `GET /api/track`: vollständige Ereignisliste einschließlich Stornierungen und ein `cursor`. Mit `?since=<cursor>` nur Änderungen seit dem letzten Abgleich; unverändert: `{ records: [], cursor: "…" }`. Ein Änderungsstand aus einer anderen Datenbank oder vor einer Wiederherstellung löst bei abweichender Datenbankkennung bzw. zu hoher Versionsnummer einen vollständigen Abgleich aus. Ungültiges Format: 400.
 - `POST /api/track`: einzelner Besuch oder `{ records: [...] }` mit maximal 200 Einträgen. Erfolg: 200 und `persisted: true`.
 - `DELETE /api/track`: einzelner Besuch als Stornierung.
 - Ungültige Eingaben: 400; fehlende Anmeldung: 401; fremder Browser-Origin: 403; falscher Benutzer bei offenen Klicks: 409; Datenbankfehler: 503.
@@ -98,6 +98,14 @@ npm run build
 ```
 
 Die Tests prüfen Berliner Datumsgrenzen und Zeitumstellung, Statistik, getrennte Speicher, alte lokale Daten, Wiederholungen, verlorene Empfangsbestätigungen, Offline-Nachsenden, Undo-Rennen und CSV-Escaping. Zugriffsschutz und Datenbankabgleich zusätzlich mit getrennten Benutzer-Sitzungen prüfen.
+
+Vor dem ersten Deployment des inkrementellen Abgleichs die additive Datenbankmigration ausführen (für Entwicklung zuerst auf einem getrennten Neon-Branch):
+
+```bash
+node --env-file=.env.local scripts/setup-visit-sync.mjs
+```
+
+`DATABASE_URL_UNPOOLED` wird bevorzugt, falls vorhanden. Das Skript führt `scripts/visit-sync.sql` atomar aus, erhält vorhandene Benutzer/Besuche/Korrekturen und lässt sich erneut ausführen. Anschließend die neue App-Version deployen. Alte Clients funktionieren mit dem neuen Server weiter, laden aber bis zum Neuladen noch den vollständigen Bestand. Eine gesperrte Datenbank muss vor Migration und Online-Prüfung wieder erreichbar sein; die Änderung setzt keine ausgeschöpfte Anbieterquote zurück. Die Migration, Änderungsabfragen, Korrekturübertragung und Rollbacks werden lokal mit PGlite (Postgres in WebAssembly) ohne Zugriff auf Produktionsdaten getestet.
 
 Das Projekt ist mit GitHub und Vercel verbunden; Änderungen können nach Commit und Push automatisch bereitgestellt werden. Direkte Veröffentlichung im bestehenden Projekt:
 

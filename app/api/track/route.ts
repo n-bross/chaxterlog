@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { isTrackEvent } from "@/lib/tracking";
 import { isVisitRecord, type VisitRecord } from "@/lib/sync-state";
-import { database, listVisits, saveVisits } from "@/lib/database";
+import { database, listVisitChanges, saveVisits } from "@/lib/database";
+import { isSyncCursor } from "@/lib/visit-changes";
 
 import { redoId } from "@/lib/corrections";
 import { sessionFor, sameOrigin } from "@/lib/access";
@@ -14,7 +15,9 @@ const reply = (data: unknown, status = 200) => NextResponse.json(data, { status,
 export async function GET(request: Request) {
   const session = await sessionFor(request);
   if (!session) return reply({ error: "Anmeldung erforderlich." }, 401);
-  try { return reply({ records: await listVisits() }); }
+  const cursor = new URL(request.url).searchParams.get("since");
+  if (cursor !== null && !isSyncCursor(cursor)) return reply({ error: "Ungültiger Änderungsstand." }, 400);
+  try { return reply(await listVisitChanges(cursor)); }
   catch { return reply({ error: "Gemeinsamer Speicher momentan nicht erreichbar." }, 503); }
 }
 export async function POST(request: Request) { return write(request, false); }
