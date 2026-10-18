@@ -119,6 +119,33 @@ export async function saveEvents(
   return listEvents();
 }
 
+export async function updateEvent(
+  id: string,
+  data: { title: string; date?: string; description?: string | null }
+): Promise<boolean> {
+  const sql = database();
+  if (data.date) {
+    const res = await sql`
+      UPDATE chaxter_events
+      SET title = ${data.title},
+          event_date = ${data.date}::date,
+          description = ${data.description ?? null}
+      WHERE id = ${id}::uuid
+      RETURNING id
+    `;
+    return res.length > 0;
+  } else {
+    const res = await sql`
+      UPDATE chaxter_events
+      SET title = ${data.title},
+          description = ${data.description !== undefined ? data.description : sql`description`}
+      WHERE id = ${id}::uuid
+      RETURNING id
+    `;
+    return res.length > 0;
+  }
+}
+
 export async function deleteEvent(id: string): Promise<boolean> {
   const sql = database();
   const res = await sql`DELETE FROM chaxter_events WHERE id = ${id}::uuid RETURNING id`;

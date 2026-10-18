@@ -1455,15 +1455,34 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.event-content-col.is-clickable {
+  cursor: pointer;
+}
+.event-content-col.is-clickable:hover .event-title {
+  color: var(--accent);
+}
+.event-action-col {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.event-edit-btn,
 .event-delete-btn {
   background: transparent;
   border: none;
   color: var(--muted);
   font-size: 14px;
-  padding: 6px 10px;
+  padding: 6px 8px;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.event-edit-btn:hover {
+  background: rgba(0, 124, 165, 0.15);
+  color: var(--accent);
 }
 .event-delete-btn:hover {
   background: rgba(229, 72, 77, 0.15);

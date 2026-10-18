@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sessionFor, sameOrigin } from "@/lib/access";
-import { listEvents, saveEvents, deleteEvent } from "@/lib/database";
+import { listEvents, saveEvents, updateEvent, deleteEvent } from "@/lib/database";
 import { normalizeDate, type ChaxterEventInput } from "@/lib/events";
 
 export const runtime = "nodejs";
@@ -89,6 +89,66 @@ export async function POST(request: Request) {
     return reply({ error: "Fehler beim Speichern der Events." }, 500);
   }
 }
+
+export async function PATCH(request: Request) {
+  const session = await sessionFor(request);
+  if (!session) return reply({ error: "Anmeldung erforderlich." }, 401);
+  if (!sameOrigin(request)) return reply({ error: "Fremder Ursprung." }, 403);
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return reply({ error: "Ungültiges JSON." }, 400);
+  }
+
+  if (!body || typeof body !== "object") {
+    return reply({ error: "Ungültige Daten." }, 400);
+  }
+
+  const rec = body as Record<string, unknown>;
+  const rawId = typeof rec.id === "string" && /^[0-9a-f-]{36}$/i.test(rec.id) ? rec.id : undefined;
+  const rawTitle = typeof rec.title === "string" ? rec.title.trim() : "";
+  const rawDate = typeof rec.date === "string" ? normalizeDate(rec.date) : undefined;
+  const rawDesc = typeof rec.description === "string" ? rec.description.trim() : undefined;
+
+  if (!rawId) {
+    return reply({ error: "Ungültige Event-ID." }, 400);
+  }
+  if (!rawTitle) {
+    return reply({ error: "Titel darf nicht leer sein." }, 400);
+  }
+
+  try {
+    const actor = { id: session.user.id, username: session.user.name || session.user.email || "Mitarbeiter" };
+    if (rawDate) {
+      const saved = await saveEvents(
+        [
+          {
+            id: rawId,
+            date: rawDate,
+            title: rawTitle.slice(0, 200),
+            description: rawDesc ? rawDesc.slice(0, 1000) : undefined,
+          },
+        ],
+        actor
+      );
+      return reply({ success: true, events: saved });
+    } else {
+      await updateEvent(rawId, {
+        title: rawTitle.slice(0, 200),
+        description: rawDesc !== undefined ? rawDesc.slice(0, 1000) : null,
+      });
+      const events = await listEvents();
+      return reply({ success: true, events });
+    }
+  } catch (err) {
+    console.error("Failed to update event:", err);
+    return reply({ error: "Fehler beim Aktualisieren des Events." }, 500);
+  }
+}
+
+export const PUT = PATCH;
 
 export async function DELETE(request: Request) {
   const session = await sessionFor(request);
