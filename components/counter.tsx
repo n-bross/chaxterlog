@@ -1,7 +1,12 @@
 "use client";
+import DuplicateWarning from "./duplicate-warning";
+import { Modal } from "./interior/modal";
+import { FloatingLabelInput } from "./interior/floating-label";
+import { LoadingButton } from "./interior/loading-button";
 
 import Link from "next/link";
 import Image from "next/image";
+import chaxterLogo from "@/public/chaxter-logo.png";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dayKey, readDay, readEvents, undoLastClick, STORAGE_PREFIX, type AgeGroup, type Counts, type TrackEvent } from "@/lib/tracking";
 
@@ -14,11 +19,13 @@ import { createId, getDevice } from "@/lib/device";
 import SyncStatus from "@/components/sync-status";
 import type { ChaxterEvent } from "@/lib/events";
 
-type IconName = "undo" | "redo" | "stats";
+type IconName = "undo" | "redo" | "stats" | "calendar" | "user";
 function Icon({ name, className = "" }: { name: IconName; className?: string }) {
   const paths: Record<IconName, React.ReactNode> = {
     undo: <path d="M9 5 4 10l5 5M4 10h10a6 6 0 0 1 0 12" />,
     redo: <path d="m15 5 5 5-5 5m5-5H10a6 6 0 0 0 0 12" />,
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 11h18" /></>,
+    user: <><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></>,
     stats: <path d="M5 20V10m7 10V4m7 16v-7" />,
   };
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>{paths[name]}</svg>;
@@ -325,18 +332,10 @@ export default function Counter({ user }: { user: { id: string; username: string
   return (
     <main className="count-screen">
       <header className="count-header">
-        {/* Left: Chaxter Logo & Statistik */}
+        {/* Account and statistics */}
         <div className="count-header-left">
-          <Link href="/konto" className="header-logo-link" aria-label="Konto und Einstellungen" title={`Konto: ${user.username}`}>
-            <Image
-              src="/chaxter-logo.png"
-              alt="Chaxter"
-              width={2360}
-              height={1640}
-              sizes="76px"
-              className="header-logo-image"
-              priority
-            />
+          <Link href="/konto" className="header-account-link" aria-label="Konto und Einstellungen" title={`Konto: ${user.username}`}>
+            <Icon name="user" />
           </Link>
           <Link href="/statistik" className="stats-button header-stats-btn" aria-label="Statistik" title="Statistik öffnen">
             <Icon name="stats" className="size-4 stats-icon" />
@@ -369,8 +368,8 @@ export default function Counter({ user }: { user: { id: string; username: string
             aria-label="Event eintragen oder ansehen"
             title={currentDayEvent ? `Event: ${currentDayEvent.title}` : "Event für diesen Tag eintragen"}
           >
-            <span className="event-plus-icon">+</span>
-            <span className="event-trigger-label">{currentDayEvent ? currentDayEvent.title : "Event"}</span>
+            <Icon name="calendar" className="event-calendar-icon" />
+            <span className="event-trigger-label">Event</span>
           </button>
 
           <div className="count-header-date">
@@ -400,39 +399,17 @@ export default function Counter({ user }: { user: { id: string; username: string
         </div>
       </header>
 
-      {/* Floating Warnings / Temporary Notices */}
-      {(duplicateWarning && !dismissedDuplicate) && (
-        <div className="counter-floating-alerts" aria-live="polite">
-          <div className="duplicate-warning-banner" role="alert">
-            <span>
-              ⚠️ <strong>Mögliche Doppelzählung:</strong> 2× {duplicateWarning.group === "u15" ? "U15" : "Ü15"} innerhalb von {duplicateWarning.diffSeconds || 1}s erfasst ({duplicateWarning.user1} &amp; {duplicateWarning.user2})
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="duplicate-undo-btn"
-                onClick={() => {
-                  undoGroup(duplicateWarning.group);
-                  setDismissedDuplicate(true);
-                }}
-              >
-                1× Abziehen (Undo)
-              </button>
-              <button
-                type="button"
-                className="banner-close-btn"
-                onClick={() => setDismissedDuplicate(true)}
-                title="Hinweis schließen"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        </div>
+      {duplicateWarning && !dismissedDuplicate && (
+        <DuplicateWarning warning={duplicateWarning}
+          onUndo={() => { undoGroup(duplicateWarning.group); setDismissedDuplicate(true); }}
+          onDismiss={() => setDismissedDuplicate(true)} />
       )}
 
       {/* Big Counting Buttons with Latest Editor directly on the respective button */}
       <div className="count-grid">
+        <div className="count-brand-backdrop" aria-hidden="true">
+          <Image src={chaxterLogo} alt="" fill sizes="100vw" loading="eager" className="count-brand-image" />
+        </div>
         {([ ["u15", "U15", "counter-blue"], ["o15", "Ü15", "counter-yellow"] ] as const).map(([group, label, color]) => {
           const groupLatest = latestByGroup[group];
           return (
@@ -507,22 +484,7 @@ export default function Counter({ user }: { user: { id: string; username: string
       {storageError && <div role="alert" className="error-message">{storageError} <button className="underline" onClick={refresh}>Erneut prüfen</button></div>}
     
       {/* Quick Event Input Modal */}
-      {showEventModal && (
-        <div className="modal-backdrop" onClick={() => setShowEventModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="modal-title font-semibold text-lg flex items-center gap-2">
-                <span>📅</span> Event eintragen
-              </h3>
-              <button
-                type="button"
-                className="banner-close-btn text-base"
-                onClick={() => setShowEventModal(false)}
-              >
-                ✕
-              </button>
-            </div>
-
+      <Modal open={showEventModal} onClose={() => { if (!isSavingEvent) setShowEventModal(false); }} title="Event eintragen" maxWidth={480} className="interior-modal" showClose={!isSavingEvent}>
             <form onSubmit={handleSaveEvent} className="space-y-3">
               <div>
                 <label className="block text-xs font-medium mb-1">Tag auswählen:</label>
@@ -531,31 +493,18 @@ export default function Counter({ user }: { user: { id: string; username: string
                   required
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
-                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
+                  className="w-full"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Event-Name:</label>
-                <input
-                  type="text"
+              <FloatingLabelInput label="Event-Name"
                   required
-                  autoFocus
-                  placeholder="z. B. Sommerfest, Kickerturnier, Filmabend"
                   value={eventTitle}
-                  onChange={(e) => setEventTitle(e.target.value)}
-                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Notiz / Uhrzeit (optional):</label>
-                <input
-                  type="text"
-                  placeholder="z. B. 14:00 – 18:00 Uhr, Grillen"
+                  onChange={(value) => setEventTitle(value)}
+                 />
+              <FloatingLabelInput label="Notiz / Uhrzeit (optional)"
                   value={eventDesc}
-                  onChange={(e) => setEventDesc(e.target.value)}
-                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
-                />
-              </div>
+                  onChange={(value) => setEventDesc(value)}
+                 />
 
               {eventSaveError && <p className="error-message text-xs">{eventSaveError}</p>}
 
@@ -576,19 +525,11 @@ export default function Counter({ user }: { user: { id: string; username: string
                   >
                     Abbrechen
                   </button>
-                  <button
-                    type="submit"
-                    className="primary-button btn-small"
-                    disabled={isSavingEvent || !eventTitle.trim()}
-                  >
-                    {isSavingEvent ? "Speichern …" : "Speichern"}
-                  </button>
+                  <LoadingButton type="submit" className="primary-button btn-small" disabled={isSavingEvent || !eventTitle.trim()} busy={isSavingEvent} busyLabel="Speichern …">{"Speichern"}</LoadingButton>
                 </div>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
     </main>
   );
 }

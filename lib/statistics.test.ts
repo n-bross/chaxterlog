@@ -71,3 +71,19 @@ test("trend totals match period totals and missing calendar buckets stay zero", 
   assert.equal(month.series[1].total, 0);
   assert.equal(month.series[0].total, 1);
 });
+
+test("custom period filters accurately and builds daily or monthly series", () => {
+  const events = [
+    event("2026-10-05T12:00:00Z"),
+    event("2026-10-10T12:00:00Z", "o15"),
+    event("2026-10-20T12:00:00Z"),
+  ];
+  const custom = analyzeEvents(events, "custom", "2026-10-01", "2026-10-15");
+  assert.equal(custom.total, 2);
+  assert.equal(custom.counts.u15, 1);
+  assert.equal(custom.counts.o15, 1);
+  assert.equal(custom.unit, "day");
+  assert.equal(custom.series.length, 15);
+  assert.equal(custom.range?.start, "2026-10-01");
+  assert.equal(custom.range?.end, "2026-10-15");
+});

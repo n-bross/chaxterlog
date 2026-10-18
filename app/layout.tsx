@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import AppUpdater from "@/components/app-updater";
-import StagingBanner from "@/components/staging-banner";
+import StagingEnvironment from "@/components/staging-banner";
 
 export const metadata: Metadata = {
   title: "ChaxterLog · Einfach zählen.",
@@ -24,9 +24,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="de">
+    <html lang="de" data-environment={process.env.NEXT_PUBLIC_IS_STAGING === "true" ? "staging" : "production"}>
       <body>
-        <StagingBanner />
+        <StagingEnvironment />
         {children}
         <AppUpdater />
       </body>

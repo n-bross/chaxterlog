@@ -26,6 +26,27 @@ await sql`CREATE TABLE IF NOT EXISTS chaxter_setup (
   id integer PRIMARY KEY CHECK (id = 1), token_hash text NOT NULL,
   expires_at timestamptz NOT NULL, completed boolean NOT NULL DEFAULT false
 )`;
+await sql`CREATE TABLE IF NOT EXISTS chaxter_support_reports (
+  id uuid PRIMARY KEY,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  user_id text,
+  username text,
+  device_id uuid,
+  device_name text,
+  platform text,
+  notes text,
+  user_agent text,
+  app_version text,
+  is_online boolean NOT NULL DEFAULT true,
+  unsynced_count integer NOT NULL DEFAULT 0,
+  today_counts jsonb,
+  queue_sample jsonb,
+  system_info jsonb,
+  resolved boolean NOT NULL DEFAULT false
+)`;
+await sql`ALTER TABLE chaxter_support_reports
+  ADD COLUMN IF NOT EXISTS user_agent text`;
+
 const token = randomBytes(32).toString("hex");
 const hash = createHash("sha256").update(token).digest("hex");
 const inserted = await sql`INSERT INTO chaxter_setup (id, token_hash, expires_at)

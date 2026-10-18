@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SegmentedControl } from "./interior/segmented-control";
 import type { VisitRecord } from "@/lib/sync-state";
 import { dayKey } from "@/lib/tracking";
 
@@ -156,50 +157,14 @@ export default function ActivityLog({
       </div>
 
       {/* Filter Tabs */}
-      <div className="activity-filter-bar" role="group" aria-label="Filter">
-        <button
-          type="button"
-          className={`activity-filter-btn ${filter === "all" ? "active" : ""}`}
-          onClick={() => {
-            setFilter("all");
-            setPage(0);
-          }}
-        >
-          Alle ({items.length})
-        </button>
-        <button
-          type="button"
-          className={`activity-filter-btn ${filter === "visits" ? "active" : ""}`}
-          onClick={() => {
-            setFilter("visits");
-            setPage(0);
-          }}
-        >
-          Gezählt ({items.filter((i) => i.kind === "visit" && !i.cancelled).length})
-        </button>
-        <button
-          type="button"
-          className={`activity-filter-btn ${filter === "corrections" ? "active" : ""}`}
-          onClick={() => {
-            setFilter("corrections");
-            setPage(0);
-          }}
-        >
-          Korrekturen ({countCorrections})
-        </button>
-        {countCancelled > 0 && (
-          <button
-            type="button"
-            className={`activity-filter-btn ${filter === "cancelled" ? "active" : ""}`}
-            onClick={() => {
-              setFilter("cancelled");
-              setPage(0);
-            }}
-          >
-            Storniert ({countCancelled})
-          </button>
-        )}
-      </div>
+      <SegmentedControl className="activity-filter-control" label="Verlauf filtern" value={filter}
+        onValueChange={(value) => { setFilter(value as typeof filter); setPage(0); }}
+        options={[
+          { value: "all", label: `Alle (${items.length})` },
+          { value: "visits", label: `Gezählt (${items.filter((item) => item.kind === "visit" && !item.cancelled).length})` },
+          { value: "corrections", label: `Korrekturen (${countCorrections})` },
+          ...(countCancelled > 0 ? [{ value: "cancelled", label: `Storniert (${countCancelled})` }] : []),
+        ]} />
 
       {filtered.length === 0 ? (
         <p className="analytics-note">Keine Einträge für die gewählte Ansicht vorhanden.</p>

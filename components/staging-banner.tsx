@@ -1,23 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-export default function StagingBanner() {
-  const [isStaging, setIsStaging] = useState(false);
-
+// Staging uses distinct counter colors instead of taking space away from the controls.
+export default function StagingEnvironment() {
   useEffect(() => {
-    const isEnvStaging = process.env.NEXT_PUBLIC_IS_STAGING === "true";
-    const isHostStaging =
-      typeof window !== "undefined" &&
-      (window.location.hostname.includes("staging") || window.location.hostname.includes("localhost"));
-    setIsStaging(isEnvStaging || isHostStaging);
+    const staging = process.env.NEXT_PUBLIC_IS_STAGING === "true"
+      || location.hostname.includes("staging") || location.hostname === "localhost";
+    document.documentElement.dataset.environment = staging ? "staging" : "production";
   }, []);
-
-  if (!isStaging) return null;
-
-  return (
-    <div className="staging-banner" role="status" aria-label="Staging Testumgebung">
-      <span className="staging-badge">TESTUMGEBUNG / STAGING</span>
-      <span className="staging-text">Unabhängige Testdatenbank · Nicht die Produktivseite</span>
-    </div>
-  );
+  return <span className="sr-only" role="status">{process.env.NEXT_PUBLIC_IS_STAGING === "true" ? "Staging · Testumgebung" : ""}</span>;
 }

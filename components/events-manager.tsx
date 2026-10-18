@@ -1,4 +1,7 @@
 "use client";
+import { Modal } from "./interior/modal";
+import { FloatingLabelInput } from "./interior/floating-label";
+import { LoadingButton } from "./interior/loading-button";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { ChaxterEvent, ChaxterEventInput } from "@/lib/events";
@@ -54,19 +57,6 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
-
-  // Close modals on Escape key
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        if (editingEvent) setEditingEvent(null);
-        if (showAddModal) setShowAddModal(false);
-        if (showImportModal) setShowImportModal(false);
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [editingEvent, showAddModal, showImportModal]);
 
   // Update preview when importText changes
   useEffect(() => {
@@ -335,23 +325,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
       </div>
 
       {/* Edit Event Modal */}
-      {editingEvent && (
-        <div className="modal-backdrop" onClick={() => setEditingEvent(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="modal-title font-semibold text-lg flex items-center gap-2">
-                <span>✏️</span> Event bearbeiten
-              </h4>
-              <button
-                type="button"
-                className="event-delete-btn text-base leading-none p-1"
-                onClick={() => setEditingEvent(null)}
-                title="Schließen"
-                aria-label="Schließen"
-              >
-                ✕
-              </button>
-            </div>
+      <Modal open={!!editingEvent} onClose={() => { if (!isSubmitting) setEditingEvent(null); }} title="Event bearbeiten" maxWidth={480} className="interior-modal" showClose={!isSubmitting}>
             <form onSubmit={handleSaveEdit} className="space-y-3">
               <div>
                 <label className="block text-xs font-medium mb-1">Datum:</label>
@@ -360,31 +334,18 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
                   required
                   value={editDate}
                   onChange={(e) => setEditDate(e.target.value)}
-                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
+                  className="w-full"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Name / Bezeichnung:</label>
-                <input
-                  type="text"
+              <FloatingLabelInput label="Name / Bezeichnung"
                   required
-                  autoFocus
-                  placeholder="z. B. Sommerfest, Kickerturnier, Kinoabend"
                   value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Notiz / Beschreibung (optional):</label>
-                <input
-                  type="text"
-                  placeholder="z. B. 14:00 - 18:00 Uhr, mit Grillen"
+                  onChange={(value) => setEditTitle(value)}
+                 />
+              <FloatingLabelInput label="Notiz / Beschreibung (optional)"
                   value={editDesc}
-                  onChange={(e) => setEditDesc(e.target.value)}
-                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
-                />
-              </div>
+                  onChange={(value) => setEditDesc(value)}
+                 />
               <div className="modal-actions flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -394,35 +355,14 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
                 >
                   Abbrechen
                 </button>
-                <button
-                  type="submit"
-                  className="primary-button"
-                  disabled={isSubmitting || !editTitle.trim()}
-                >
-                  {isSubmitting ? "Wird gespeichert …" : "Änderung speichern"}
-                </button>
+                <LoadingButton type="submit" className="primary-button" disabled={isSubmitting || !editTitle.trim()} busy={isSubmitting} busyLabel="Wird gespeichert …">{"Änderung speichern"}</LoadingButton>
               </div>
+            {error && <p role="alert" className="error-message">{error}</p>}
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Add Single Event Modal */}
-      {showAddModal && (
-        <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="modal-title font-semibold text-lg">Neues Event anlegen</h4>
-              <button
-                type="button"
-                className="event-delete-btn text-base leading-none p-1"
-                onClick={() => setShowAddModal(false)}
-                title="Schließen"
-                aria-label="Schließen"
-              >
-                ✕
-              </button>
-            </div>
+      <Modal open={showAddModal} onClose={() => { if (!isSubmitting) setShowAddModal(false); }} title="Event hinzufügen" maxWidth={480} className="interior-modal" showClose={!isSubmitting}>
             <form onSubmit={handleAddSingle} className="space-y-3">
               <div>
                 <label className="block text-xs font-medium mb-1">Datum:</label>
@@ -431,30 +371,18 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
                   required
                   value={newDate}
                   onChange={(e) => setNewDate(e.target.value)}
-                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
+                  className="w-full"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Titel / Bezeichnung:</label>
-                <input
-                  type="text"
+              <FloatingLabelInput label="Titel / Bezeichnung"
                   required
-                  placeholder="z. B. Sommerfest, Kickerturnier, Kinoabend"
                   value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Notiz / Beschreibung (optional):</label>
-                <input
-                  type="text"
-                  placeholder="z. B. 14:00 - 18:00 Uhr, mit Grillen"
+                  onChange={(value) => setNewTitle(value)}
+                 />
+              <FloatingLabelInput label="Notiz / Beschreibung (optional)"
                   value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                  className="w-full text-base p-2 rounded border border-gray-700 bg-gray-900 text-white"
-                />
-              </div>
+                  onChange={(value) => setNewDesc(value)}
+                 />
               <div className="modal-actions flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -464,39 +392,14 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
                 >
                   Abbrechen
                 </button>
-                <button
-                  type="submit"
-                  className="primary-button"
-                  disabled={isSubmitting || !newTitle.trim()}
-                >
-                  {isSubmitting ? "Speichern …" : "Speichern"}
-                </button>
+                <LoadingButton type="submit" className="primary-button" disabled={isSubmitting || !newTitle.trim()} busy={isSubmitting} busyLabel="Speichern …">{"Speichern"}</LoadingButton>
               </div>
+            {error && <p role="alert" className="error-message">{error}</p>}
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Import Modal */}
-      {showImportModal && (
-        <div className="modal-backdrop" onClick={() => setShowImportModal(false)}>
-          <div className="modal-content modal-wide" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="modal-title font-semibold text-lg">Events importieren</h4>
-              <button
-                type="button"
-                className="event-delete-btn text-base leading-none p-1"
-                onClick={() => setShowImportModal(false)}
-                title="Schließen"
-                aria-label="Schließen"
-              >
-                ✕
-              </button>
-            </div>
-            <p className="text-xs text-muted mb-3">
-              Unterstützt Kalender-Exporte (<strong>.ics</strong> von Apple Kalender / Google Kalender), CSV oder kopierte Excel-Listen (Spalten: Datum, Titel, Beschreibung).
-            </p>
-
+      <Modal open={showImportModal} onClose={() => { if (!isSubmitting) setShowImportModal(false); }} title="Events importieren" maxWidth={680} className="interior-modal" showClose={!isSubmitting}>
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <input
@@ -523,7 +426,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
                   value={importText}
                   onChange={(e) => setImportText(e.target.value)}
                   placeholder={`Beispiel CSV/Excel:\n25.10.2026; Herbstfest; Großes Buffet\n31.10.2026; Halloween-Party\n01.11.2026; Kicker-Turnier`}
-                  className="w-full text-sm font-mono p-2 rounded border border-gray-700 bg-gray-900 text-white resize-y"
+                  className="w-full font-mono resize-y"
                 />
               </div>
 
@@ -559,19 +462,14 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
                 >
                   Abbrechen
                 </button>
-                <button
-                  type="submit"
-                  className="primary-button"
-                  onClick={handleExecuteImport}
-                  disabled={isSubmitting || parsedPreview.length === 0}
-                >
-                  {isSubmitting ? "Wird importiert …" : `${parsedPreview.length} Event(s) übernehmen`}
-                </button>
+                <LoadingButton type="button" className="primary-button" onClick={handleExecuteImport}
+                  disabled={isSubmitting || parsedPreview.length === 0} busy={isSubmitting} busyLabel="Wird importiert …">
+                  {`${parsedPreview.length} Event(s) übernehmen`}
+                </LoadingButton>
               </div>
             </div>
-          </div>
-        </div>
-      )}
+      {error && <p role="alert" className="error-message">{error}</p>}
+      </Modal>
     </section>
   );
 }
