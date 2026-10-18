@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import type { Correction } from "./correction-types";
 import type { VisitRecord } from "./sync-state";
+import { visitChangesQuery } from "./visit-changes";
 
 type Row = { id: string; age_group: "u15" | "o15"; occurred_at: string; click_order: number; cancelled: boolean; device_id: string | null; device_name: string | null; platform: string | null; user_id: string | null; username: string | null; legacy: boolean; redo_of: string | null };
 export function database() {
@@ -18,6 +19,17 @@ export async function listVisits(ids?: string[]): Promise<VisitRecord[]> {
     ids ? sql`SELECT * FROM chaxter_visits WHERE id=ANY(${ids}::uuid[])` : sql`SELECT * FROM chaxter_visits ORDER BY occurred_at, id`,
     ids ? sql`SELECT * FROM chaxter_corrections WHERE visit_id=ANY(${ids}::uuid[]) ORDER BY occurred_at,id` : sql`SELECT * FROM chaxter_corrections ORDER BY occurred_at,id`,
   ]);
+  return visitsWithCorrections(rows as Row[], actions as CorrectionRow[]);
+}
+
+export async function listVisitChanges(cursor: string | null) {
+  const result = await database().query(visitChangesQuery, [cursor]);
+  const snapshot = result[0] as { cursor: string; visits: Row[]; corrections: CorrectionRow[] } | undefined;
+  if (!snapshot) throw new Error("Visit sync migration is missing");
+  return { cursor: snapshot.cursor, records: visitsWithCorrections(snapshot.visits, snapshot.corrections) };
+}
+
+function visitsWithCorrections(rows: Row[], actions: CorrectionRow[]): VisitRecord[] {
   const byVisit = new Map<string, Correction[]>();
   for (const row of actions as CorrectionRow[]) {
     const correction: Correction = { id: row.id, kind: row.kind, timestamp: new Date(row.occurred_at).toISOString(), order: Number(row.click_order),

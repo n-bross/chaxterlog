@@ -1,4 +1,5 @@
 import { isVisitRecord, mergeRemote, readRecords, type VisitRecord } from "./sync-state.ts";
+import { isSyncCursor } from "./visit-changes.ts";
 
 export const LOCAL_CHANGE = "chaxterlog:local-change";
 export class SyncError extends Error {
@@ -6,9 +7,11 @@ export class SyncError extends Error {
   constructor(status: number, message: string) { super(message); this.status = status; }
 }
 export type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
+const CURSOR_KEY = "chaxterlog:sync-cursor:v1";
 
-async function request(fetcher: Fetcher, init?: RequestInit): Promise<VisitRecord[]> {
-  const response = await fetcher("/api/track", { ...init, cache: "no-store" });
+async function request(fetcher: Fetcher, init?: RequestInit, cursor?: string | null): Promise<{ records: VisitRecord[]; cursor?: string }> {
+  const url = cursor ? `/api/track?since=${encodeURIComponent(cursor)}` : "/api/track";
+  const response = await fetcher(url, { ...init, cache: "no-store" });
   if (!response.ok) {
     let message = `Sync HTTP ${response.status}`;
     if (response.status === 409) {
@@ -18,7 +21,8 @@ async function request(fetcher: Fetcher, init?: RequestInit): Promise<VisitRecor
   }
   const data: unknown = await response.json();
   if (!data || typeof data !== "object" || !("records" in data) || !Array.isArray(data.records) || !data.records.every(isVisitRecord)) throw new Error("Invalid sync response");
-  return data.records;
+  if ("cursor" in data && !isSyncCursor(data.cursor)) throw new Error("Invalid sync cursor");
+  return { records: data.records, cursor: "cursor" in data ? data.cursor as string : undefined };
 }
 
 export async function synchronize(storage: Storage, fetcher: Fetcher, device?: { id: string; name: string; platform: string }) {
@@ -43,10 +47,20 @@ export async function synchronize(storage: Storage, fetcher: Fetcher, device?: {
       if (batch.length && size + length > 150_000) break;
       batch.push(pending[i++]); size += length;
     }
-    const records = await request(fetcher, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ records: batch }) });
-    mergeRemote(storage, records);
+    const result = await request(fetcher, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ records: batch }) });
+    mergeRemote(storage, result.records);
   }
-  const remote = await request(fetcher);
-  mergeRemote(storage, remote);
+  const stored = storage.getItem(CURSOR_KEY);
+  const remote = await request(fetcher, undefined, isSyncCursor(stored) ? stored : null);
+  mergeRemote(storage, remote.records);
+  // Advance only after every record was durably merged. POST acknowledgements
+  // cover only the uploaded IDs and must never advance this global cursor.
+  if (remote.cursor) {
+    const current = storage.getItem(CURSOR_KEY);
+    const [epoch, revision] = remote.cursor.split(":");
+    if (current === stored || !isSyncCursor(current) || current.split(":")[0] !== epoch || BigInt(current.split(":")[1]) < BigInt(revision)) {
+      storage.setItem(CURSOR_KEY, remote.cursor);
+    }
+  } else storage.removeItem(CURSOR_KEY); // Compatibility with an older server during rollout.
   return readRecords(storage).filter((event) => !event.synced).length;
 }

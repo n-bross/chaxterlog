@@ -21,6 +21,7 @@
     "uuid": "^14.0.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^24",
     "@types/pg": "^8.23.1",

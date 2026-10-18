@@ -141,3 +141,66 @@ test("lost acknowledgement after server commit retries with the same ID", async 
   assert.equal(backend.records.size, 1);
   assert.equal(readRecords(storage)[0].synced, true);
 });
+
+const epoch = "e3d907b1-05aa-4eac-89a0-000000000999";
+test("unchanged polls use the persisted cursor instead of downloading history again", async () => {
+  const storage = storageMock();
+  const urls: string[] = [];
+  let bytes = 0;
+  const history = Array.from({ length: 1000 }, (_, i) => ({ ...visit(i), cancelled: false }));
+  const fetcher: Fetcher = async (url) => {
+    urls.push(url);
+    const body = { records: url.includes("since=") ? [] : history, cursor: `${epoch}:10` };
+    bytes += JSON.stringify(body).length;
+    return Response.json(body);
+  };
+  await synchronize(storage, fetcher);
+  const initialBytes = bytes;
+  // A fresh synchronize call represents reloads too: the cursor lives with the records.
+  await synchronize(storage, fetcher);
+  assert.equal(new URL(urls[1], "http://localhost").searchParams.get("since"), `${epoch}:10`);
+  assert.ok(bytes - initialBytes < 150);
+  assert.equal(readRecords(storage).length, 1000);
+});
+
+test("a failed local merge retries the same delta before advancing the cursor", async () => {
+  const storage = storageMock();
+  await synchronize(storage, async () => Response.json({ records: [], cursor: `${epoch}:1` }));
+  const setItem = storage.setItem;
+  storage.setItem = () => { throw new Error("storage full"); };
+  await assert.rejects(synchronize(storage, async () => Response.json({ records: [{ ...visit(1), cancelled: false }], cursor: `${epoch}:2` })));
+  storage.setItem = setItem;
+  await synchronize(storage, async (url) => {
+    assert.equal(new URL(url, "http://localhost").searchParams.get("since"), `${epoch}:1`);
+    return Response.json({ records: [{ ...visit(1), cancelled: true }], cursor: `${epoch}:2` });
+  });
+  assert.equal(readRecords(storage)[0].cancelled, true);
+});
+
+test("upload acknowledgements do not skip changes made by another device", async () => {
+  const storage = storageMock();
+  await synchronize(storage, async () => Response.json({ records: [], cursor: `${epoch}:1` }));
+  queueVisit(storage, visit(1));
+  await synchronize(storage, async (url, init) => {
+    if (init?.method === "POST") return Response.json({ records: [{ ...visit(1), cancelled: false }], cursor: `${epoch}:3` });
+    assert.equal(new URL(url, "http://localhost").searchParams.get("since"), `${epoch}:1`);
+    return Response.json({ records: [{ ...visit(2), cancelled: false }], cursor: `${epoch}:3` });
+  });
+  assert.equal(readRecords(storage).length, 2);
+});
+
+test("a database restore can replace a cursor that is ahead of the server", async () => {
+  const storage = storageMock();
+  await synchronize(storage, async () => Response.json({ records: [], cursor: `${epoch}:100` }));
+  await synchronize(storage, async () => Response.json({ records: [{ ...visit(1), cancelled: false }], cursor: `${epoch}:2` }));
+  await synchronize(storage, async (url) => {
+    assert.equal(new URL(url, "http://localhost").searchParams.get("since"), `${epoch}:2`);
+    return Response.json({ records: [], cursor: `${epoch}:2` });
+  });
+});
+
+test("invalid cursors do not acknowledge records or advance synchronization", async () => {
+  const storage = storageMock();
+  await assert.rejects(synchronize(storage, async () => Response.json({ records: [{ ...visit(1), cancelled: false }], cursor: "bad" })));
+  assert.equal(readRecords(storage).length, 0);
+});
