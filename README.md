@@ -16,6 +16,8 @@ vercel env pull .env.local
 npm run dev
 ```
 
+Jeder zusätzliche Git-Worktree benötigt eine eigene `.env.local`; Git übernimmt diese ignorierte Datei nicht. Die vorhandene Entwicklungskonfiguration in das neue Arbeitsverzeichnis übernehmen und `BETTER_AUTH_URL` auf dessen lokale Adresse und Port setzen, bevor die Anmeldung geprüft wird.
+
 Benötigte Variablen: `DATABASE_URL`, `BETTER_AUTH_SECRET` (zufälliger, mindestens 32 Zeichen langer Server-Schlüssel), `BETTER_AUTH_URL` (die tatsächliche Website-Origin). `.env.local` und `.vercel` werden nicht eingecheckt. `.env.example` enthält nur Platzhalter. Die URL muss zum verwendeten Host und Port passen; in dieser Arbeitsumgebung ist der Entwicklungsserver auf Port 3002.
 
 ## Datenbank und erster Admin
@@ -146,3 +148,10 @@ node --env-file=.env.local scripts/setup-corrections.mjs
 ```
 
 Die Migration erstellt die Korrekturtabelle und eine eindeutige Redo-Verknüpfung, löscht keine Besuche und wird bei frischer Einrichtung auch vom Datenbank-Setup ausgeführt. UUID v4 (Zählung/Aktion) und v5 (deterministisches Redo) werden unterstützt. Für Entwicklung und Migrationstests eine separate Datenbank oder einen Neon-Branch verwenden.
+
+
+## UI-Komponenten von interior.dev
+
+Die Komponenten unter `components/interior/` stammen aus der öffentlichen Registry von [interior.dev](https://www.interior.dev/docs/accordion). Die jeweilige Quelladresse steht am Anfang jeder Datei. `motion` übernimmt die Animationen.
+
+Accordion, Segmented Control, Loading Button, Copy Button, Floating Label und Modal werden in Konto, Statistik, Aktivitätsverlauf, Admin und Eventformularen verwendet. Die lokalen Anpassungen ergänzen deutsche Texte, vorhandene Theme-Farben, größere Touch-Ziele und Formularattribute. Loading Button unterstützt zusätzlich einen gesteuerten Formularmodus: native Validierung, Absenden per Enter und die bestehenden Submit-Handler bleiben erhalten. Modals bringen Fokusverwaltung, Escape und die Rückkehr zum auslösenden Element mit.

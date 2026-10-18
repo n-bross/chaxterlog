@@ -1,5 +1,9 @@
 "use client";
 import Link from "next/link";
+import { AccordionSection } from "./interior/accordion";
+import { LoadingButton } from "./interior/loading-button";
+import { FloatingLabelInput } from "./interior/floating-label";
+import { PasswordStrength } from "./interior/password-strength";
 import ChaxterLogo from "./chaxter-logo";
 import { useEffect, useState, type FormEvent } from "react";
 import { CHECK_UPDATE } from "@/lib/app-update";
@@ -11,20 +15,21 @@ import { sendDiagnosticReport } from "@/lib/support";
 export default function Account({ user }: { user: { username: string; role: string } }) {
   const [device, setDevice] = useState<Device | null>(null);
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"device" | "password" | "logout" | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [localClicks, setLocalClicks] = useState(0);
 
   // Support / Diagnostic state
   const [supportNotes, setSupportNotes] = useState("");
   const [supportBusy, setSupportBusy] = useState(false);
   const [supportMsg, setSupportMsg] = useState("");
 
-  // Download export state
-  const [exportFrom, setExportFrom] = useState("");
-  const [exportTo, setExportTo] = useState("");
-
   useEffect(() => {
     try {
       setDevice(getDevice());
+      if (typeof window !== "undefined") {
+        setLocalClicks(readRecords(window.localStorage).length);
+      }
     } catch {
       setMessage("Browserspeicher nicht verfügbar.");
     }
@@ -32,7 +37,7 @@ export default function Account({ user }: { user: { username: string; role: stri
 
   async function saveDevice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
+    setBusy("device");
     setMessage("");
     try {
       const value = renameDevice(String(new FormData(event.currentTarget).get("name")));
@@ -50,71 +55,40 @@ export default function Account({ user }: { user: { username: string; role: stri
     } catch {
       setMessage("Gerätename konnte nicht gespeichert werden.");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   async function password(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true);
+    setBusy("password");
     setMessage("");
-    const form = event.currentTarget,
-      values = new FormData(form);
-    try {
-      const result = await authClient.changePassword({
-        currentPassword: String(values.get("current")),
-        newPassword: String(values.get("new")),
-        revokeOtherSessions: true,
-      });
-      if (result.error) setMessage("Passwort nicht geändert. Bisheriges Passwort prüfen.");
-      else {
-        setMessage("Passwort geändert. Andere Anmeldungen wurden beendet.");
-        form.reset();
-      }
-    } catch {
-      setMessage("Verbindung fehlgeschlagen.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleSendSupport(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSupportBusy(true);
-    setSupportMsg("");
-    try {
-      await sendDiagnosticReport(supportNotes);
-      setSupportMsg("✓ Diagnosebericht erfolgreich gesendet. Der Admin kann den Zustand nun in der Admin-Ansicht prüfen.");
-      setSupportNotes("");
-    } catch (err) {
-      setSupportMsg(err instanceof Error ? err.message : "Diagnosebericht konnte nicht übertragen werden.");
-    } finally {
-      setSupportBusy(false);
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    const { error } = await authClient.changePassword({
+      currentPassword: String(values.get("current")),
+      newPassword: String(values.get("new")),
+      revokeOtherSessions: true,
+    });
+    setBusy(null);
+    if (error) {
+      setMessage(
+        error.message?.includes("current password")
+          ? "Bisheriges Passwort stimmt nicht."
+          : "Passwort konnte nicht geändert werden. Mindestens 10 Zeichen erforderlich."
+      );
+    } else {
+      setMessage("Passwort geändert. Andere Anmeldungen wurden beendet.");
+      form.reset();
+      setNewPassword("");
     }
   }
 
   async function logout() {
-    setBusy(true);
-    try {
-      if (readRecords(localStorage).some((event) => !event.synced)) {
-        setMessage(
-          "Es gibt noch nicht synchronisierte Klicks. Erst zur Zählung zurückkehren und den grünen Sync-Punkt abwarten."
-        );
-        return;
-      }
-      const result = await authClient.signOut();
-      if (result.error) throw new Error();
-      window.location.assign("/login");
-    } catch {
-      setMessage("Abmelden fehlgeschlagen.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const invalidExportRange = !!exportFrom && !!exportTo && exportFrom > exportTo;
-  function downloadExport(format: string) {
-    return `/api/admin/export?${new URLSearchParams({ format, from: exportFrom, to: exportTo })}`;
+    setBusy("logout");
+    setMessage("");
+    await authClient.signOut();
+    window.location.assign("/login");
   }
 
   return (
@@ -129,139 +103,142 @@ export default function Account({ user }: { user: { username: string; role: stri
         </div>
       </header>
 
-      <section className="manage-card">
-        <div className="account-user-row">
-          <span>Angemeldet als</span>
-          <strong>{user.username}</strong>
+      {message && (
+        <aside className="notification" role="status" aria-live="polite">
+          {message}
+        </aside>
+      )}
+
+      {/* Accordion Sections for secondary actions */}
+      <AccordionSection title="Angemeldet als" description="Benutzerprofil und Abmeldung" meta={user.role === "admin" ? "Admin" : "Mitarbeiter"}>
+        <div className="account-identity-box">
+          <span className="account-username">{user.username}</span>
+          <span className="account-role-pill">{user.role === "admin" ? "Administrator" : "Mitarbeiter"}</span>
         </div>
-        <div className="button-row">
+        <div className="account-btn-group">
           {user.role === "admin" && (
             <Link className="primary-button" href="/admin">
-              Admin-Ansicht
+              Admin-Bereich öffnen
             </Link>
           )}
-          <button className="secondary-button" disabled={busy} onClick={logout}>
+          <LoadingButton
+            className="secondary-button"
+            disabled={!!busy}
+            busy={busy === "logout"}
+            onClick={logout}
+          >
             Abmelden
-          </button>
+          </LoadingButton>
         </div>
-      </section>
+      </AccordionSection>
 
-      {/* Download function for all users */}
-      <section className="manage-card">
-        <h2>Daten herunterladen</h2>
-        <div className="form-row">
-          <label>
-            Von
-            <input type="date" value={exportFrom} onChange={(event) => setExportFrom(event.target.value)} />
-          </label>
-          <label>
-            Bis
-            <input type="date" value={exportTo} onChange={(event) => setExportTo(event.target.value)} />
-          </label>
-        </div>
+      <AccordionSection title="Installation & Offline-Speicher" description="Lokale Zählerdaten und Gerätestatus" meta="System">
         <p className="muted">
-          CSV- und JSON-Exporte der erfassten Besuche und Korrekturen. Ohne Datum wird der gesamte Datenbestand heruntergeladen.
+          Zählerdaten werden auf diesem Gerät lokal gespeichert und bei Verbindung mit dem Server synchronisiert.
         </p>
-        {invalidExportRange ? (
-          <p role="alert">Das Enddatum liegt vor dem Anfangsdatum.</p>
-        ) : (
-          <div className="button-row">
-            <a className="primary-button" href={downloadExport("csv")} download>
-              Einzelbesuche · CSV
-            </a>
-            <a className="secondary-button" href={downloadExport("daily")} download>
-              Tageswerte · CSV
-            </a>
-            <a className="secondary-button" href={downloadExport("corrections")} download>
-              Undo &amp; Redo · CSV
-            </a>
-            <a className="secondary-button" href={downloadExport("json")} download>
-              Alle Details · JSON
-            </a>
+        <div className="system-status-grid">
+          <div className="status-item">
+            <span className="status-label">Lokale Klicks</span>
+            <span className="status-value">{localClicks}</span>
           </div>
-        )}
-      </section>
+          <div className="status-item">
+            <span className="status-label">Offline-Betrieb</span>
+            <span className="status-value status-ok">Aktiv (PWA)</span>
+          </div>
+        </div>
+      </AccordionSection>
 
-      <section className="manage-card">
-        <h2>Hilfe & Diagnose senden</h2>
-        <p className="muted">
-          Falls auf diesem Gerät Probleme auftreten (z. B. Synchronisation hängt oder Zählerwerte unklar), kannst du hier einen Diagnosebericht direkt an den Administrator senden.
-        </p>
-        <form onSubmit={handleSendSupport}>
-          <label>
-            Was ist das Problem? (optional)
-            <textarea
-              rows={3}
-              value={supportNotes}
-              onChange={(e) => setSupportNotes(e.target.value)}
-              placeholder="Z. B. Der grüne Punkt erscheint nicht, falsche Klickzahl etc."
-              maxLength={2000}
-            />
-          </label>
-          <button className="primary-button" disabled={supportBusy}>
-            {supportBusy ? "Wird gesendet …" : "Diagnosebericht an Admin senden"}
-          </button>
-        </form>
-        {supportMsg && <p role="status" className="manage-message">{supportMsg}</p>}
-      </section>
-
-      <section className="manage-card">
-        <h2>Dieses Gerät</h2>
-        <p className="muted">
-          Eine Kennung pro Browserinstallation. Verschiedene Browser auf demselben Tablet bekommen eigene Kennungen.
-        </p>
+      <AccordionSection title="Gerätename ändern" description="Name dieses Browsers in der Statistik festlegen" meta="Gerät">
         {device && (
           <>
-            <div className="device-info-pill">
-              <span>{device.platform}</span>
-              <span>·</span>
-              <span>ID: {device.id.slice(0, 8)}</span>
-            </div>
+            <p className="muted">
+              Der Gerätename erscheint im Admin-Bereich und hilft zu erkennen, welches Tablet oder Smartphone gezählt hat.
+            </p>
             <form onSubmit={saveDevice}>
-              <label>
-                Gerätename
-                <input name="name" defaultValue={device.name} required maxLength={60} />
-              </label>
-              <button className="primary-button" disabled={busy}>
+              <FloatingLabelInput label="Gerätename" name="name" defaultValue={device.name} required maxLength={40}  />
+              <LoadingButton disabled={!!busy} busy={busy === "device"}>
                 Gerätenamen speichern
-              </button>
+              </LoadingButton>
             </form>
           </>
         )}
-      </section>
+      </AccordionSection>
 
-      <section className="manage-card">
-        <h2>Passwort ändern</h2>
+      <AccordionSection title="Passwort ändern" description="Zugang und andere Anmeldungen absichern" meta="Sicherheit">
         <form onSubmit={password}>
-          <label>
-            Bisheriges Passwort
-            <input name="current" type="password" autoComplete="current-password" required maxLength={128} />
-          </label>
-          <label>
-            Neues Passwort
-            <input name="new" type="password" autoComplete="new-password" required minLength={10} maxLength={128} />
-          </label>
-          <button className="primary-button" disabled={busy}>
+          <FloatingLabelInput label="Bisheriges Passwort" name="current" type="password" autoComplete="current-password" required maxLength={128}  />
+          <FloatingLabelInput
+            label="Neues Passwort"
+            name="new"
+            type="password"
+            value={newPassword}
+            onChange={(val) => setNewPassword(val)}
+            autoComplete="new-password"
+            required
+            minLength={10}
+            maxLength={128}
+          />
+          <PasswordStrength value={newPassword} className="mt-1" />
+          <LoadingButton disabled={!!busy} busy={busy === "password"}>
             Passwort ändern
-          </button>
+          </LoadingButton>
         </form>
-      </section>
+      </AccordionSection>
 
-      <section className="manage-card">
-        <h2>App-Version</h2>
+      <AccordionSection title="App-Version" description="Aktualisierungen der App prüfen" meta="Updates">
         <p className="muted">
           Neue Versionen werden automatisch geprüft und nach dem Synchronisieren in einer Bedienpause geladen.
         </p>
         <button className="secondary-button" onClick={() => window.dispatchEvent(new Event(CHECK_UPDATE))}>
           Nach Updates suchen
         </button>
-      </section>
+      </AccordionSection>
 
-      {message && (
-        <p role="status" className="manage-message">
-          {message}
+      {/* Support & Problem melden */}
+      <AccordionSection
+        title="Problem melden / Support"
+        description="Diagnosebericht an den Administrator übermitteln"
+        meta="Hilfe"
+      >
+        <p className="muted">
+          Übermittelt Systeminformationen (Browser, Verbindungsstatus, anstehende Synchronisierungen) direkt an das Admin-Panel, um Störungen schnell zu beheben.
         </p>
-      )}
+
+        {supportMsg && (
+          <p className="notification" role="status" style={{ marginBottom: "1rem" }}>
+            {supportMsg}
+          </p>
+        )}
+
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setSupportBusy(true);
+            setSupportMsg("");
+            const res = await sendDiagnosticReport(supportNotes);
+            setSupportBusy(false);
+            if (res.ok) {
+              setSupportMsg("Diagnosebericht erfolgreich gesendet. Der Administrator sieht die Meldung.");
+              setSupportNotes("");
+            } else {
+              setSupportMsg(res.error || "Konnte Diagnosebericht nicht senden.");
+            }
+          }}
+        >
+          <FloatingLabelInput label="Problembeschreibung (optional)"
+            value={supportNotes}
+            onChange={(val) => setSupportNotes(val)}
+            maxLength={500}
+           />
+          <LoadingButton
+            className="secondary-button"
+            disabled={supportBusy}
+            busy={supportBusy}
+          >
+            Diagnosebericht senden
+          </LoadingButton>
+        </form>
+      </AccordionSection>
     </main>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 import { useState, type FormEvent } from "react";
 import { authClient } from "@/lib/auth-client";
+import { FloatingLabelInput } from "./interior/floating-label";
 import ChaxterLogo from "./chaxter-logo";
+import { LoadingButton } from "./interior/loading-button";
 
 export default function LoginForm({ setup = false }: { setup?: boolean }) {
   const [busy, setBusy] = useState(false);
@@ -50,9 +52,7 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
         </div>
         <h1>{setup ? "Admin einrichten" : "Anmelden"}</h1>
         <form onSubmit={submit}>
-          <label>
-            Benutzername
-            <input
+          <FloatingLabelInput label="Benutzername"
               name="username"
               autoComplete="username"
               required={!setup}
@@ -61,32 +61,25 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
               autoCapitalize="none"
               spellCheck={false}
               maxLength={30}
-            />
-          </label>
-          <label>
-            {setup ? "Neues Passwort" : "Passwort"}
-            <input
+             />
+          <FloatingLabelInput label={setup ? "Neues Passwort" : "Passwort"}
               name="password"
               type="password"
               autoComplete={setup ? "new-password" : "current-password"}
               required
               minLength={setup ? 10 : undefined}
               maxLength={128}
-            />
-          </label>
+             />
           {setup && (
             <>
-              <label>
-                Passwort wiederholen
-                <input
+              <FloatingLabelInput label="Passwort wiederholen"
                   name="confirm"
                   type="password"
                   autoComplete="new-password"
                   required
                   minLength={10}
                   maxLength={128}
-                />
-              </label>
+                 />
               <p className="muted">
                 Mindestens 10 Zeichen. Bewahre das Passwort sicher auf; es gibt keine Wiederherstellung per E-Mail.
               </p>
@@ -97,9 +90,9 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
               {error}
             </p>
           )}
-          <button className="primary-button" disabled={busy}>
-            {busy ? "Bitte warten …" : setup ? "Admin-Zugang erstellen" : "Anmelden"}
-          </button>
+          <LoadingButton busy={busy} busyLabel="Bitte warten …">
+            {setup ? "Admin-Zugang erstellen" : "Anmelden"}
+          </LoadingButton>
         </form>
       </div>
     </main>

@@ -1,4 +1,9 @@
 "use client";
+import { FloatingLabelInput } from "./interior/floating-label";
+import { LoadingButton } from "./interior/loading-button";
+import { AccordionSection } from "./interior/accordion";
+import { Dropdown } from "./interior/dropdown";
+import { PasswordStrength } from "./interior/password-strength";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
@@ -42,9 +47,10 @@ export default function AdminPanel() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
+  const [createPassword, setCreatePassword] = useState("");
+  const [resetUserId, setResetUserId] = useState<string>("");
+  const [resetPassword, setResetPassword] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -119,8 +125,10 @@ export default function AdminPanel() {
     event.preventDefault();
     const form = event.currentTarget,
       values = new FormData(form);
-    if (await change({ action: "create", username: values.get("username"), password: values.get("password") }))
+    if (await change({ action: "create", username: values.get("username"), password: values.get("password") })) {
       form.reset();
+      setCreatePassword("");
+    }
   }
 
   async function reset(event: FormEvent<HTMLFormElement>) {
@@ -133,121 +141,90 @@ export default function AdminPanel() {
         userId: values.get("userId"),
         password: values.get("password"),
       })
-    )
+    ) {
       form.reset();
-  }
-
-  const invalidRange = !!from && !!to && from > to;
-  function download(format: string) {
-    return `/api/admin/export?${new URLSearchParams({ format, from, to })}`;
+      setResetPassword("");
+    }
   }
 
   const openReportsCount = data?.reports?.filter((r) => !r.resolved).length ?? 0;
+  const nonAdminUsers = data?.users.filter((user) => user.role !== "admin") ?? [];
+  const effectiveResetUserId = resetUserId || nonAdminUsers[0]?.id || "";
 
   return (
     <main className="manage-screen">
       <header className="manage-header">
-        <Link className="back-link" href="/">
-          ← Zählung
+        <Link className="back-link" href="/konto">
+          ← Konto
         </Link>
         <h1>Admin</h1>
-        <Link className="back-link" href="/konto">
-          Konto
-        </Link>
+        <div style={{ width: 80 }} />
       </header>
 
-      {error && (
-        <p role="alert" className="error-message">
-          {error} <button onClick={() => void load()}>Erneut versuchen</button>
-        </p>
-      )}
+      {error && <p className="error">{error}</p>}
 
-      <section className="admin-totals" aria-label="Übersicht">
-        <div>
-          <span>Heute</span>
-          <strong>{data?.summary.today ?? "–"}</strong>
-        </div>
-        <div>
-          <span>Gesamt</span>
-          <strong>{data?.summary.total ?? "–"}</strong>
-        </div>
-        <div>
-          <span>Storniert</span>
-          <strong>{data?.summary.cancelled ?? "–"}</strong>
-        </div>
-      </section>
-
-      {/* Support & Diagnostics Section */}
-      <section className="manage-card">
-        <div className="card-header-flex">
-          <h2>Hilfe- & Diagnose-Meldungen</h2>
-          {openReportsCount > 0 ? (
-            <span className="badge-highlight">{openReportsCount} offen</span>
-          ) : (
-            <span className="badge-subtle">Alles erledigt</span>
-          )}
-        </div>
-        <p className="muted">
-          Hier laufen Fehler- und Hilfeberichte von den Tablets und Mobilgeräten ein. Du kannst dir aus der Ferne den genauen Gerätezustand, offene Klicks und Diagnosedaten ansehen.
-        </p>
-
+      {/* Support & Diagnosemeldungen */}
+      <AccordionSection
+        title="Support & Diagnosemeldungen"
+        description={
+          openReportsCount > 0
+            ? `${openReportsCount} offene ${openReportsCount === 1 ? "Meldung" : "Meldungen"} von Geräten`
+            : "Keine offenen Problemmeldungen"
+        }
+        meta={openReportsCount > 0 ? `${openReportsCount} offen` : undefined}
+      >
         {(!data?.reports || data.reports.length === 0) ? (
-          <p className="muted" style={{ fontStyle: "italic" }}>
-            Keine Diagnosemeldungen vorhanden.
-          </p>
+          <p className="muted">Bisher wurden keine Diagnoseberichte übermittelt.</p>
         ) : (
-          <div className="reports-list">
+          <div className="report-list">
             {data.reports.map((report) => {
               const isExpanded = expandedReportId === report.id;
               return (
-                <div key={report.id} className={`report-item ${report.resolved ? "report-resolved" : ""}`}>
-                  <div className="report-main">
-                    <div className="report-meta">
-                      <span className="report-time">{date(report.created_at)}</span>
-                      <span className="report-device">
-                        {report.device_name ?? "Gerät"} ({report.platform ?? "Unbekannt"})
+                <div
+                  key={report.id}
+                  className={`report-card ${report.resolved ? "report-resolved" : ""}`}
+                >
+                  <div className="report-card-header">
+                    <div>
+                      <strong>{report.device_name || "Unbenanntes Gerät"}</strong>
+                      <span className="report-meta">
+                        {" · "}
+                        {date(report.created_at)}
+                        {report.username ? ` · Benutzer: ${report.username}` : ""}
                       </span>
-                      {report.username && (
-                        <span className="report-user">von <strong>{report.username}</strong></span>
-                      )}
-                      <span className={`status-pill ${report.is_online ? "pill-online" : "pill-offline"}`}>
-                        {report.is_online ? "Online" : "Offline"}
-                      </span>
-                      {report.unsynced_count > 0 && (
-                        <span className="status-pill pill-warning">
-                          {report.unsynced_count} ungesynct
-                        </span>
-                      )}
                     </div>
+                    <span className={`status-pill ${report.resolved ? "resolved" : "open"}`}>
+                      {report.resolved ? "Erledigt" : "Offen"}
+                    </span>
+                  </div>
 
-                    {report.notes && (
-                      <p className="report-notes">
-                        <strong>Problem:</strong> {report.notes}
-                      </p>
-                    )}
+                  {report.notes && (
+                    <p className="report-notes">
+                      <strong>Problem:</strong> {report.notes}
+                    </p>
+                  )}
 
-                    <div className="report-actions">
-                      <button
-                        className="secondary-button btn-small"
-                        onClick={() => setExpandedReportId(isExpanded ? null : report.id)}
-                      >
-                        {isExpanded ? "Details ausblenden" : "Diagnose-Details ansehen"}
-                      </button>
-                      <button
-                        className="secondary-button btn-small"
-                        disabled={busy}
-                        onClick={() => void handleSupportAction("toggleResolved", report)}
-                      >
-                        {report.resolved ? "Wieder öffnen" : "Als erledigt markieren"}
-                      </button>
-                      <button
-                        className="secondary-button btn-small btn-danger"
-                        disabled={busy}
-                        onClick={() => void handleSupportAction("delete", report)}
-                      >
-                        Löschen
-                      </button>
-                    </div>
+                  <div className="report-actions">
+                    <button
+                      className="secondary-button btn-small"
+                      onClick={() => setExpandedReportId(isExpanded ? null : report.id)}
+                    >
+                      {isExpanded ? "Details ausblenden" : "Diagnose-Details ansehen"}
+                    </button>
+                    <button
+                      className="secondary-button btn-small"
+                      disabled={busy}
+                      onClick={() => void handleSupportAction("toggleResolved", report)}
+                    >
+                      {report.resolved ? "Wieder öffnen" : "Als erledigt markieren"}
+                    </button>
+                    <button
+                      className="secondary-button btn-small btn-danger"
+                      disabled={busy}
+                      onClick={() => void handleSupportAction("delete", report)}
+                    >
+                      Löschen
+                    </button>
                   </div>
 
                   {isExpanded && (
@@ -262,16 +239,17 @@ export default function AdminPanel() {
                         )}
                       </div>
                       {report.system_info && (
-                        <details className="raw-json-details">
-                          <summary>System- & Netzwerkdetails (JSON)</summary>
-                          <pre>{JSON.stringify(report.system_info, null, 2)}</pre>
-                        </details>
+                        <pre className="system-info-pre">
+                          {JSON.stringify(report.system_info, null, 2)}
+                        </pre>
                       )}
-                      {report.queue_sample && report.queue_sample.length > 0 && (
-                        <details className="raw-json-details">
-                          <summary>Warteschlange ungespeicherter Klicks ({report.queue_sample.length})</summary>
-                          <pre>{JSON.stringify(report.queue_sample, null, 2)}</pre>
-                        </details>
+                      {report.queue_sample && (
+                        <div className="queue-sample-box">
+                          <strong>Ausstehende Aktionen ({report.unsynced_count}):</strong>
+                          <pre className="system-info-pre">
+                            {JSON.stringify(report.queue_sample, null, 2)}
+                          </pre>
+                        </div>
                       )}
                     </div>
                   )}
@@ -280,50 +258,22 @@ export default function AdminPanel() {
             })}
           </div>
         )}
-      </section>
+      </AccordionSection>
 
-      <section className="manage-card">
-        <h2>Daten herunterladen</h2>
-        <div className="form-row">
-          <label>
-            Von
-            <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-          </label>
-          <label>
-            Bis
-            <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-          </label>
-        </div>
+      {/* Benutzerverwaltung */}
+      <AccordionSection
+        title="Mitarbeiter"
+        description="Zugänge anlegen, sperren und Passwörter verwalten"
+        defaultOpen={true}
+      >
         <p className="muted">
-          Ohne Datum: gesamter Bestand. Einzelbesuche enthalten Benutzer, Gerät und Stornierungen. Tageswerte enthalten nur gezählte Besuche. Zeitzone: Berlin.
+          Mitarbeiter können Besuche zählen und eigene Passwörter ändern. Nur Administratoren sehen diesen Bereich.
         </p>
-        {invalidRange ? (
-          <p role="alert">Das Enddatum liegt vor dem Anfangsdatum.</p>
-        ) : (
-          <div className="button-row">
-            <a className="primary-button" href={download("csv")} download>
-              Einzelbesuche · CSV
-            </a>
-            <a className="secondary-button" href={download("daily")} download>
-              Tageswerte · CSV
-            </a>
-            <a className="secondary-button" href={download("corrections")} download>
-              Undo &amp; Redo · CSV
-            </a>
-            <a className="secondary-button" href={download("json")} download>
-              Alle Details · JSON
-            </a>
-          </div>
-        )}
-      </section>
-
-      <section className="manage-card">
-        <h2>Benutzer</h2>
         <div className="table-scroll">
           <table>
             <thead>
               <tr>
-                <th>Benutzername</th>
+                <th>Benutzer</th>
                 <th>Rolle</th>
                 <th>Status</th>
                 <th>Aktion</th>
@@ -333,12 +283,13 @@ export default function AdminPanel() {
               {data?.users.map((user) => (
                 <tr key={user.id}>
                   <td>{user.username}</td>
-                  <td>{user.role === "admin" ? "Admin" : "Mitarbeiter"}</td>
+                  <td>{user.role}</td>
                   <td>{user.banned ? "Gesperrt" : "Aktiv"}</td>
                   <td>
                     {user.role !== "admin" && (
                       <button
-                        className="secondary-button"
+                        className="danger-button"
+                        type="button"
                         disabled={busy}
                         onClick={() =>
                           void change({
@@ -358,75 +309,72 @@ export default function AdminPanel() {
         </div>
         <h3>Mitarbeiterzugang anlegen</h3>
         <form onSubmit={create}>
-          <label>
-            Benutzername
-            <input
+          <FloatingLabelInput label="Benutzername"
               name="username"
               required
               minLength={3}
               maxLength={30}
-              pattern="[a-zA-Z0-9_.\-]{3,30}"
+              pattern="[a-zA-Z0-9_.-]{3,30}"
               autoCapitalize="none"
               autoComplete="off"
               spellCheck={false}
-            />
-          </label>
-          <label>
-            Startpasswort
-            <input
+             />
+          <FloatingLabelInput label="Startpasswort"
               name="password"
               type="password"
+              value={createPassword}
+              onChange={(val) => setCreatePassword(val)}
               required
               minLength={10}
               maxLength={128}
               autoComplete="new-password"
-            />
-          </label>
+             />
+          <PasswordStrength value={createPassword} className="mt-1" />
           <p className="muted">
             Zugangsdaten persönlich weitergeben. Mitarbeiter können ihr Passwort unter „Konto“ ändern.
           </p>
-          <button className="primary-button" disabled={busy}>
-            Zugang anlegen
-          </button>
+          <LoadingButton className="primary-button" busy={busy}>Zugang anlegen</LoadingButton>
         </form>
-        {!!data?.users.some((user) => user.role !== "admin") && (
+        {!!nonAdminUsers.length && (
           <>
             <h3>Passwort neu setzen</h3>
             <form onSubmit={reset}>
-              <label>
-                Mitarbeiter
-                <select name="userId" required>
-                  {data.users
-                    .filter((user) => user.role !== "admin")
-                    .map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.username}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                Neues Startpasswort
-                <input
+              <div className="interior-field w-full">
+                <label className="text-[12px] font-medium text-neutral-400 block mb-1.5">
+                  Mitarbeiter
+                </label>
+                <Dropdown
+                  name="userId"
+                  label="Mitarbeiter"
+                  placeholder="Mitarbeiter auswählen"
+                  items={nonAdminUsers.map((user) => ({
+                    value: user.id,
+                    label: user.username,
+                  }))}
+                  value={effectiveResetUserId}
+                  onChange={(val) => setResetUserId(val)}
+                  className="w-full"
+                />
+              </div>
+              <FloatingLabelInput label="Neues Startpasswort"
                   name="password"
                   type="password"
+                  value={resetPassword}
+                  onChange={(val) => setResetPassword(val)}
                   required
                   minLength={10}
                   maxLength={128}
                   autoComplete="new-password"
-                />
-              </label>
+                 />
+              <PasswordStrength value={resetPassword} className="mt-1" />
               <p className="muted">Beendet alle bestehenden Anmeldungen dieses Benutzers.</p>
-              <button className="secondary-button" disabled={busy}>
-                Passwort zurücksetzen
-              </button>
+              <LoadingButton className="secondary-button" busy={busy}>Passwort zurücksetzen</LoadingButton>
             </form>
           </>
         )}
-      </section>
+      </AccordionSection>
 
-      <section className="manage-card">
-        <h2>Geräte / Browserinstallationen</h2>
+      <AccordionSection title="Geräte / Browserinstallationen" description="Gerätenamen und letzte Aktivität im Überblick">
         <p className="muted">
           Gerätenamen lassen sich auf dem jeweiligen Gerät unter „Konto“ ändern. Keine Hardware-ID und keine GPS-Ortung. Letzte Aktivität: letzter Upload oder Speichern des Gerätenamens.
         </p>
@@ -454,12 +402,12 @@ export default function AdminPanel() {
             </tbody>
           </table>
         </div>
-      </section>
+      </AccordionSection>
 
       {message && (
-        <p className="manage-message" role="status">
+        <aside className="notification" role="status" aria-live="polite">
           {message}
-        </p>
+        </aside>
       )}
     </main>
   );

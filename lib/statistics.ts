@@ -1,6 +1,6 @@
 import { dayKey, type TrackEvent } from "./tracking.ts";
 
-export type Period = "day" | "week" | "month" | "year" | "all";
+export type Period = "day" | "week" | "month" | "year" | "custom" | "all";
 export type SeriesPoint = { key: string; label: string; u15: number; o15: number; total: number };
 export const WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
 const hourFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Berlin", hour: "2-digit", hourCycle: "h23" });
@@ -18,8 +18,13 @@ export function addDays(day: string, amount: number): string {
   return date.toISOString().slice(0, 10);
 }
 function weekday(day: string) { return (calendarDate(day).getUTCDay() + 6) % 7; }
-export function periodRange(period: Period, anchor: string): { start: string; end: string } | null {
+export function periodRange(period: Period, anchor: string, customEnd?: string): { start: string; end: string } | null {
   if (period === "all") return null;
+  if (period === "custom") {
+    const s = anchor || "2000-01-01";
+    const e = customEnd || anchor || "2099-12-31";
+    return s <= e ? { start: s, end: e } : { start: e, end: s };
+  }
   calendarDate(anchor);
   if (period === "day") return { start: anchor, end: anchor };
   if (period === "week") {
@@ -35,7 +40,7 @@ export function periodRange(period: Period, anchor: string): { start: string; en
   return { start: `${anchor.slice(0, 4)}-01-01`, end: `${anchor.slice(0, 4)}-12-31` };
 }
 export function shiftPeriod(period: Period, anchor: string, direction: number): string {
-  if (period === "all") return anchor;
+  if (period === "all" || period === "custom") return anchor;
   if (period === "day" || period === "week") return addDays(anchor, direction * (period === "week" ? 7 : 1));
   const date = calendarDate(period === "year" ? `${anchor.slice(0, 4)}-01-01` : `${anchor.slice(0, 7)}-01`);
   if (period === "year") date.setUTCFullYear(date.getUTCFullYear() + direction);
@@ -45,8 +50,8 @@ export function shiftPeriod(period: Period, anchor: string, direction: number): 
 const point = (key: string, label: string): SeriesPoint => ({ key, label, u15: 0, o15: 0, total: 0 });
 function increment(item: SeriesPoint, event: TrackEvent) { item[event.group]++; item.total++; }
 
-export function analyzeEvents(events: TrackEvent[], period: Period, anchor: string) {
-  const range = periodRange(period, anchor);
+export function analyzeEvents(events: TrackEvent[], period: Period, anchor: string, customEnd?: string) {
+  const range = periodRange(period, anchor, customEnd);
   const visible: TrackEvent[] = [];
   const days = new Map<string, SeriesPoint>();
   const hours = Array.from({ length: 24 }, (_, index) => point(String(index), `${String(index).padStart(2, "0")}–${String(index + 1).padStart(2, "0")} Uhr`));
@@ -78,19 +83,22 @@ export function analyzeEvents(events: TrackEvent[], period: Period, anchor: stri
   const series = new Map<string, SeriesPoint>();
   const first = range?.start ?? sortedDays[0]?.key;
   const last = range?.end ?? sortedDays.at(-1)?.key;
+  const daySpan = first && last ? (calendarDate(last).getTime() - calendarDate(first).getTime()) / 86400000 : 0;
   const yearsInsteadOfMonths = first && last ? Number(last.slice(0, 4)) * 12 + Number(last.slice(5, 7)) - Number(first.slice(0, 4)) * 12 - Number(first.slice(5, 7)) > 23 : false;
   let unit: "hour" | "day" | "month" | "year";
   if (period === "day") {
     unit = "hour";
     hours.forEach((item) => series.set(item.key, { ...item }));
-  } else if (period === "week" || period === "month") {
+  } else if (period === "week" || period === "month" || (period === "custom" && daySpan <= 35)) {
     unit = "day";
-    for (let day = first!; day <= last!; day = addDays(day, 1)) {
-      const label = new Intl.DateTimeFormat("de-DE", { timeZone: "UTC", day: "2-digit", month: "2-digit" }).format(calendarDate(day));
-      series.set(day, point(day, label));
+    if (first && last) {
+      for (let day = first; day <= last; day = addDays(day, 1)) {
+        const label = new Intl.DateTimeFormat("de-DE", { timeZone: "UTC", day: "2-digit", month: "2-digit" }).format(calendarDate(day));
+        series.set(day, point(day, label));
+      }
     }
   } else {
-    unit = period === "all" && yearsInsteadOfMonths ? "year" : "month";
+    unit = (period === "all" || period === "custom") && yearsInsteadOfMonths ? "year" : "month";
     if (first && last) {
       if (unit === "year") {
         for (let year = Number(first.slice(0, 4)); year <= Number(last.slice(0, 4)); year++) series.set(String(year), point(String(year), String(year)));
