@@ -6,5 +6,6 @@ node_modules/
 .agents/
 skills-lock.json
 AGENTS.md
-scripts/
+scripts/*
+!scripts/vercel-build.sh
 lib/*.test.ts
