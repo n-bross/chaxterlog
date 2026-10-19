@@ -164,15 +164,16 @@ Produktionsadresse: https://chaxterlog.vercel.app. Bei Domainwechsel `SITE_URL` 
 
 ### Vercel-Previews
 
-`vercel.json` setzt den Build-Befehl auf `scripts/vercel-build.sh`. Produktion baut weiter mit `npm run build`. Preview-Builds legen pro Branch ein eigenes Convex-Preview-Deployment an, deployen die Funktionen, bauen die Website gegen dessen URL und setzen dort `SITE_URL` auf die Branch-URL (`VERCEL_BRANCH_URL`). Die `.site`-Adresse wird aus `NEXT_PUBLIC_CONVEX_URL` abgeleitet.
+`vercel.json` setzt den Build-Befehl auf `scripts/vercel-build.sh`. Produktion baut weiter mit `npm run build`. Preview-Builds legen pro Branch ein eigenes Convex-Preview-Deployment an, deployen die Funktionen, und bauen die Website gegen dessen URL. Die `.site`-Adresse wird aus `NEXT_PUBLIC_CONVEX_URL` abgeleitet. Previews haben kein festes `SITE_URL`; Better Auth übernimmt die Origin pro Anfrage, wenn sie zu `SITE_ALLOWED_HOSTS` passt. Das Skript bricht ab, wenn `CONVEX_DEPLOY_KEY` kein Preview-Key (`preview:…`) ist, damit Previews nie in Dev oder Produktion deployen.
 
 Einmalig:
 
 1. Im Convex-Dashboard unter Project Settings einen **Preview Deploy Key** erzeugen und in Vercel als `CONVEX_DEPLOY_KEY` nur für **Preview** hinterlegen.
-2. Gemeinsames Auth-Secret für alle Previews (nicht das Produktions-Secret):
+2. Standardvariablen für alle Previews (eigenes Secret, nicht das Produktions-Secret):
 
    ```bash
    openssl rand -base64 32 | npx convex env default set --type preview BETTER_AUTH_SECRET
+   npx convex env default set --type preview SITE_ALLOWED_HOSTS 'chaxterlog-*-nbross.vercel.app'
    ```
 
 Jede Preview startet mit leerer Datenbank. Admin für einen Branch vorbereiten (`SITE_URL` ist die Branch-URL aus Vercel, `--preview-name` der Git-Branch):

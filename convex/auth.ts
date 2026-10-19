@@ -9,9 +9,12 @@ import authSchema from "./betterAuth/schema";
 import authConfig from "./auth.config";
 
 export const authComponent = createClient<DataModel, typeof authSchema>(components.betterAuth, { local: { schema: authSchema } });
+// Preview deployments have no fixed SITE_URL; their origin is matched against SITE_ALLOWED_HOSTS per request.
+const allowedHosts = process.env.SITE_ALLOWED_HOSTS?.split(",").map((host) => host.trim()).filter(Boolean) ?? [];
+const baseURL = process.env.SITE_URL ?? (allowedHosts.length ? { allowedHosts, protocol: "https" as const, fallback: process.env.CONVEX_SITE_URL } : undefined);
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) => ({
-  appName: "ChaxterLog", baseURL: process.env.SITE_URL, secret: process.env.BETTER_AUTH_SECRET,
-  trustedOrigins: [process.env.SITE_URL!], database: authComponent.adapter(ctx),
+  appName: "ChaxterLog", baseURL, secret: process.env.BETTER_AUTH_SECRET,
+  trustedOrigins: process.env.SITE_URL ? [process.env.SITE_URL] : [], database: authComponent.adapter(ctx),
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 10, maxPasswordLength: 128 },
   session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: false } },
   rateLimit: { enabled: true, storage: "database", window: 60, max: 60, customRules: { "/sign-in/username": { window: 60, max: 5 } } },
