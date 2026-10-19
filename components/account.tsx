@@ -1,4 +1,7 @@
 "use client";
+import { convex } from "@/lib/convex-client";
+import { api } from "@/convex/_generated/api";
+import { synchronize } from "@/lib/sync";
 import Link from "next/link";
 import { AccordionSection } from "./interior/accordion";
 import { LoadingButton } from "./interior/loading-button";
@@ -39,21 +42,16 @@ export default function Account({ user }: { user: { username: string; role: stri
     event.preventDefault();
     setBusy("device");
     setMessage("");
+    let savedLocally = false;
     try {
       const value = renameDevice(String(new FormData(event.currentTarget).get("name")));
       setDevice(value);
-      const response = await fetch("/api/device", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(value),
-      });
-      setMessage(
-        response.ok
-          ? "Gerätename gespeichert. Neue Klicks verwenden diesen Namen."
-          : "Gerätename lokal gespeichert. Server gerade nicht erreichbar."
-      );
+      savedLocally = true;
+      if (!navigator.onLine || !convex.connectionState().isWebSocketConnected) throw new Error("offline");
+      await convex.mutation(api.devices.rename, value);
+      setMessage("Gerätename gespeichert. Neue Klicks verwenden diesen Namen.");
     } catch {
-      setMessage("Gerätename konnte nicht gespeichert werden.");
+      setMessage(savedLocally ? "Gerätename lokal gespeichert. Server gerade nicht erreichbar." : "Gerätename konnte nicht gespeichert werden.");
     } finally {
       setBusy(null);
     }
@@ -87,8 +85,18 @@ export default function Account({ user }: { user: { username: string; role: stri
   async function logout() {
     setBusy("logout");
     setMessage("");
-    await authClient.signOut();
-    window.location.assign("/login");
+    try {
+      if (!navigator.onLine || !convex.connectionState().isWebSocketConnected) throw new Error("offline");
+      const actor = await convex.query(api.auth.currentUser, {});
+      const left = await synchronize(localStorage, (records) => convex.mutation(api.visits.upload, { records }), getDevice(), actor?.id);
+      if (left) throw new Error("Offene Klicks zuerst synchronisieren.");
+      const { error } = await authClient.signOut();
+      if (error) throw new Error("logout failed");
+      window.location.assign("/login");
+    } catch {
+      setMessage("Abmelden benötigt eine Verbindung und vollständig synchronisierte Klicks.");
+      setBusy(null);
+    }
   }
 
   return (
@@ -143,7 +151,7 @@ export default function Account({ user }: { user: { username: string; role: stri
           </div>
           <div className="status-item">
             <span className="status-label">Offline-Betrieb</span>
-            <span className="status-value status-ok">Aktiv (PWA)</span>
+            <span className="status-value status-ok">Zählen ohne Verbindung</span>
           </div>
         </div>
       </AccordionSection>

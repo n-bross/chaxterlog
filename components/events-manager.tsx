@@ -1,4 +1,7 @@
 "use client";
+import { convex } from "@/lib/convex-client";
+import { api } from "@/convex/_generated/api";
+import { listEvents } from "@/lib/client-data";
 import { Modal } from "./interior/modal";
 import { FloatingLabelInput } from "./interior/floating-label";
 import { LoadingButton } from "./interior/loading-button";
@@ -40,13 +43,9 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
 
   const loadEvents = useCallback(async () => {
     try {
-      const res = await fetch("/api/events", { cache: "no-store" });
-      if (!res.ok) throw new Error("Fehler beim Laden");
-      const data = await res.json();
-      if (Array.isArray(data.events)) {
-        setEvents(data.events);
-        onEventsChange?.(data.events);
-      }
+      const items = await listEvents();
+      setEvents(items);
+      onEventsChange?.(items);
     } catch {
       setError("Events konnten nicht geladen werden.");
     } finally {
@@ -79,17 +78,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
     setIsSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: newDate,
-          title: newTitle.trim(),
-          description: newDesc.trim() || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Speichern fehlgeschlagen");
+      await convex.mutation(api.events.save, { events: [{ date: newDate, title: newTitle.trim(), description: newDesc.trim() || undefined }] });
 
       setNewTitle("");
       setNewDesc("");
@@ -117,18 +106,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
     setIsSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/events", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editingEvent.id,
-          date: editDate,
-          title: editTitle.trim(),
-          description: editDesc.trim() || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Speichern fehlgeschlagen");
+      await convex.mutation(api.events.save, { events: [{ id: editingEvent.id, date: editDate, title: editTitle.trim(), description: editDesc.trim() || undefined }] });
 
       setEditingEvent(null);
       await loadEvents();
@@ -159,13 +137,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
     setIsSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ events: parsedPreview }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Import fehlgeschlagen");
+      for (let i = 0; i < parsedPreview.length; i += 100) await convex.mutation(api.events.save, { events: parsedPreview.slice(i, i + 100) });
 
       setImportText("");
       setParsedPreview([]);
@@ -182,10 +154,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
     if (!window.confirm(`Event "${title}" wirklich löschen?`)) return;
 
     try {
-      const res = await fetch(`/api/events?id=${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Löschen fehlgeschlagen");
+      await convex.mutation(api.events.remove, { id });
       await loadEvents();
     } catch {
       setError("Event konnte nicht gelöscht werden.");

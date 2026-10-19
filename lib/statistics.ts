@@ -48,24 +48,25 @@ export function shiftPeriod(period: Period, anchor: string, direction: number): 
   return date.toISOString().slice(0, 10);
 }
 const point = (key: string, label: string): SeriesPoint => ({ key, label, u15: 0, o15: 0, total: 0 });
-function increment(item: SeriesPoint, event: TrackEvent) { item[event.group]++; item.total++; }
+type WeightedEvent = TrackEvent & { weight?: number; day?: string; hour?: number };
+function increment(item: SeriesPoint, event: WeightedEvent) { const weight = event.weight ?? 1; item[event.group] += weight; item.total += weight; }
 
-export function analyzeEvents(events: TrackEvent[], period: Period, anchor: string, customEnd?: string) {
+export function analyzeEvents(events: WeightedEvent[], period: Period, anchor: string, customEnd?: string) {
   const range = periodRange(period, anchor, customEnd);
   const visible: TrackEvent[] = [];
   const days = new Map<string, SeriesPoint>();
   const hours = Array.from({ length: 24 }, (_, index) => point(String(index), `${String(index).padStart(2, "0")}–${String(index + 1).padStart(2, "0")} Uhr`));
   const weekdays = WEEKDAYS.map((label, index) => ({ ...point(String(index), label), days: 0, average: 0 }));
   const counts = { u15: 0, o15: 0 };
-  const enriched: { day: string; hour: number; event: TrackEvent }[] = [];
+  const enriched: { day: string; hour: number; event: WeightedEvent }[] = [];
   for (const event of events) {
     const date = new Date(event.timestamp);
-    const day = dayKey(date);
+    const day = event.day ?? dayKey(date);
     if (range && (day < range.start || day > range.end)) continue;
-    const hour = Number(hourFormatter.format(date));
+    const hour = event.hour ?? Number(hourFormatter.format(date));
     visible.push(event);
     enriched.push({ day, hour, event });
-    counts[event.group]++;
+    counts[event.group] += event.weight ?? 1;
     increment(hours[hour], event);
     if (!days.has(day)) days.set(day, point(day, day));
     increment(days.get(day)!, event);
@@ -121,13 +122,22 @@ export function analyzeEvents(events: TrackEvent[], period: Period, anchor: stri
     }
   }
   const topDays = [...sortedDays].sort((a, b) => b.total - a.total || b.key.localeCompare(a.key));
+  const total = counts.u15 + counts.o15;
   return {
-    range, events: visible, counts, total: visible.length, recordedDays: days.size,
-    average: days.size ? visible.length / days.size : 0,
+    range, events: visible, counts, total, recordedDays: days.size,
+    average: days.size ? total / days.size : 0,
     weekdays, hours, series: [...series.values()], unit,
     bestWeekdays: bestAverage ? weekdays.filter((item) => item.average === bestAverage) : [],
     bestHours: bestHourCount ? hours.filter((item) => item.total === bestHourCount) : [],
     bestDays: bestDayCount ? sortedDays.filter((item) => item.total === bestDayCount) : [],
     topDays,
   };
+}
+
+export function analyzeAggregates(days: import("./aggregation.ts").DailyAggregate[], period: Period, anchor: string, customEnd?: string) {
+  const buckets: WeightedEvent[] = [];
+  for (const day of days) for (const [group, hours] of [["u15", day.u], ["o15", day.o]] as const) {
+    hours.forEach((weight, hour) => { if (weight) buckets.push({ id: `${day.date}:${group}:${hour}`, timestamp: `${day.date}T12:00:00Z`, group, weight, day: day.date, hour }); });
+  }
+  return { ...analyzeEvents(buckets, period, anchor, customEnd), events: [] as TrackEvent[] };
 }

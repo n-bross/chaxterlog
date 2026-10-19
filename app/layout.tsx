@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import ConvexProvider from "@/components/convex-provider";
+import { getToken } from "@/lib/auth-server";
 import AppUpdater from "@/components/app-updater";
 import StagingEnvironment from "@/components/staging-banner";
 
@@ -22,12 +24,13 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const token = await getToken();
   return (
     <html lang="de" data-environment={process.env.NEXT_PUBLIC_IS_STAGING === "true" ? "staging" : "production"}>
       <body>
         <StagingEnvironment />
-        {children}
+        <ConvexProvider initialToken={token}>{children}</ConvexProvider>
         <AppUpdater />
       </body>
     </html>

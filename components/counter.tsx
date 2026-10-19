@@ -1,4 +1,8 @@
 "use client";
+import { useConvexAuth, useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { convex } from "@/lib/convex-client";
+import { applySnapshot, displayCounts } from "@/lib/sync";
 import DuplicateWarning from "./duplicate-warning";
 import { Modal } from "./interior/modal";
 import { FloatingLabelInput } from "./interior/floating-label";
@@ -72,7 +76,8 @@ export default function Counter({ user }: { user: { id: string; username: string
     const date = new Date();
     const day = selectedDayRef.current ?? dayKey(date);
     try {
-      const { counts, latest } = readDay(localStorage, day);
+      const { latest } = readDay(localStorage, day);
+      const counts = displayCounts(localStorage, day);
       setCounts(counts);
       setLastEvent(latest?.event ?? null);
       setRedoEvent(latestRedo(localStorage, day));
@@ -120,17 +125,15 @@ export default function Counter({ user }: { user: { id: string; username: string
   }, []);
 
   const syncStatus = useVisitSync(refresh);
+  const { isAuthenticated } = useConvexAuth();
+  const live = useQuery(api.visits.live, isAuthenticated && selectedDay ? { date: selectedDay } : "skip");
+  useEffect(() => { if (live) { try { applySnapshot(localStorage, live); refresh(); } catch { setStorageError("Browserspeicher nicht verfügbar."); } } }, [live, refresh]);
 
   // Load event for current day
   const loadDayEvent = useCallback((day: string) => {
     if (!day) return;
-    fetch(`/api/events?from=${day}&to=${day}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!data || !Array.isArray(data.events)) return;
-        const matching = data.events.find((ev: ChaxterEvent) => ev.date === day);
-        setCurrentDayEvent(matching || null);
-      })
+    convex.query(api.events.list, { from: day, to: day, paginationOpts: { cursor: null, numItems: 100 } })
+      .then((data) => setCurrentDayEvent(data.page[0] ?? null))
       .catch(() => setCurrentDayEvent(null));
   }, []);
 
@@ -144,17 +147,7 @@ export default function Counter({ user }: { user: { id: string; username: string
     setIsSavingEvent(true);
     setEventSaveError(null);
     try {
-      const res = await fetch("/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: eventDate,
-          title: eventTitle.trim(),
-          description: eventDesc.trim() || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Fehler beim Speichern");
+      await convex.mutation(api.events.save, { events: [{ ...(currentDayEvent?.date === eventDate ? { id: currentDayEvent.id } : {}), date: eventDate, title: eventTitle.trim(), description: eventDesc.trim() || undefined }] });
       setShowEventModal(false);
       setEventTitle("");
       setEventDesc("");
@@ -169,7 +162,7 @@ export default function Counter({ user }: { user: { id: string; username: string
   useEffect(() => {
     delete document.documentElement.dataset.theme;
     refresh();
-    const interval = setInterval(refresh, 15_000);
+
     const onStorage = (event: StorageEvent) => {
       if (event.key === null || event.key.startsWith(STORAGE_PREFIX)) refresh();
     };
@@ -178,7 +171,7 @@ export default function Counter({ user }: { user: { id: string; username: string
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      clearInterval(interval);
+
       Object.values(timers.current).forEach(clearTimeout);
       Object.values(holdTimers.current).forEach((t) => { if (t) clearTimeout(t); });
       window.removeEventListener("storage", onStorage);
@@ -204,7 +197,7 @@ export default function Counter({ user }: { user: { id: string; username: string
     selectedDayRef.current = null;
     setDismissedDuplicate(false);
     refresh();
-    setFeedback(`${group === "u15" ? "U15" : "Ü15"}: Besuch gespeichert. ${readDay(localStorage).counts[group]} heute.`);
+    setFeedback(`${group === "u15" ? "U15" : "Ü15"}: Besuch gespeichert. ${displayCounts(localStorage, dayKey())[group]} heute.`);
     clearTimeout(timers.current[group]);
     setFlash((value) => ({ ...value, [group]: true }));
     timers.current[group] = setTimeout(() => setFlash((value) => ({ ...value, [group]: false })), 150);
@@ -232,7 +225,7 @@ export default function Counter({ user }: { user: { id: string; username: string
       try { navigator.vibrate?.([30, 40, 30]); } catch { /* Ignore */ }
       return;
     }
-    const currentCounts = readDay(localStorage).counts;
+    const currentCounts = displayCounts(localStorage, dayKey());
     setFeedback(`${groupLabel}: 1 abgezogen (Besuch zurückgenommen). Stand: ${currentCounts[group]}.`);
     setDecrementFlash((value) => ({ ...value, [group]: true }));
     setTimeout(() => setDecrementFlash((value) => ({ ...value, [group]: false })), 350);

@@ -25,7 +25,7 @@ export function redoLastClick(storage: Storage, correction: Correction, day = da
     deviceName: correction.deviceName, platform: correction.platform, legacy: false,
     corrections: [correction],
   };
-  storage.setItem(eventKey(restored), JSON.stringify({ ...restored, cancelled: false, synced: false }));
+  storage.setItem(eventKey(restored), JSON.stringify({ ...restored, cancelled: false, baseline: 0, activeRevision: undefined, confirmed: undefined, synced: false }));
   return restored;
 }
 export type CorrectionEntry = Correction & { visitId: string; group: TrackEvent["group"]; visitTimestamp: string };

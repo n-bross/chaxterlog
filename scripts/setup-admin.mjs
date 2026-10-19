@@ -1,0 +1,14 @@
+import { randomBytes, createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync } from "node:fs";
+const site = process.env.SITE_URL ?? process.env.NEXT_PUBLIC_SITE_URL;
+if (!site) throw new Error("SITE_URL fehlt.");
+const token = randomBytes(32).toString("hex");
+const tokenHash = createHash("sha256").update(token).digest("hex");
+const prod = process.argv.includes("--prod");
+const previewIndex = process.argv.indexOf("--preview-name");
+const target = prod ? ["--prod"] : previewIndex > 0 ? ["--preview-name", process.argv[previewIndex + 1]] : [];
+execFileSync("npx", ["convex", "run", ...target, "setup:prepare", JSON.stringify({ tokenHash })], { stdio: "inherit" });
+mkdirSync(".vercel", { recursive: true });
+writeFileSync(".vercel/admin-setup-link.txt", `${site.replace(/\/$/, "")}/einrichten#${token}\n`, { mode: 0o600 });
+console.log("Einmallink für sieben Tage in .vercel/admin-setup-link.txt gespeichert.");

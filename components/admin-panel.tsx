@@ -1,4 +1,7 @@
 "use client";
+import { convex } from "@/lib/convex-client";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
 import { FloatingLabelInput } from "./interior/floating-label";
 import { LoadingButton } from "./interior/loading-button";
 import { AccordionSection } from "./interior/accordion";
@@ -31,7 +34,7 @@ export type SupportReport = {
 type Overview = {
   users: User[];
   devices: Device[];
-  summary: { total: number; cancelled: number; today: number };
+  cursors: { users: string | null; devices: string | null; reports: string | null };
   reports?: SupportReport[];
 };
 
@@ -54,38 +57,37 @@ export default function AdminPanel() {
 
   const load = useCallback(async () => {
     try {
-      const response = await fetch("/api/admin/users", { cache: "no-store" });
-      if (response.status === 401) {
-        window.location.assign("/login");
-        return;
-      }
-      if (!response.ok) throw new Error();
-      setData(await response.json());
+      const paginationOpts = { cursor: null, numItems: 50 };
+      const [users, devices, reports] = await Promise.all([
+        convex.query(api.admin.users, { paginationOpts }),
+        convex.query(api.admin.devices, { paginationOpts }),
+        convex.query(api.admin.reports, { paginationOpts }),
+      ]);
+      setData({ users: users.page, devices: devices.page, reports: reports.page, cursors: { users: users.isDone ? null : users.continueCursor, devices: devices.isDone ? null : devices.continueCursor, reports: reports.isDone ? null : reports.continueCursor } });
       setError("");
     } catch {
       setError("Admin-Daten konnten nicht geladen werden.");
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") void load();
-    }, 15_000);
-    return () => clearInterval(timer);
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
+
+  async function more(kind: "users" | "devices" | "reports") {
+    if (!data?.cursors[kind]) return;
+    setBusy(true);
+    try {
+      const paginationOpts = { cursor: data.cursors[kind], numItems: 50 };
+      const page = kind === "users" ? await convex.query(api.admin.users, { paginationOpts }) : kind === "devices" ? await convex.query(api.admin.devices, { paginationOpts }) : await convex.query(api.admin.reports, { paginationOpts });
+      setData({ ...data, [kind]: [...(data[kind] ?? []), ...page.page], cursors: { ...data.cursors, [kind]: page.isDone ? null : page.continueCursor } });
+    } catch { setMessage("Weitere Einträge konnten nicht geladen werden."); }
+    finally { setBusy(false); }
+  }
 
   async function change(body: Record<string, unknown>) {
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch("/api/admin/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Änderung fehlgeschlagen.");
+      await convex.mutation(api.admin.change, { action: String(body.action), ...(typeof body.username === "string" ? { username: body.username } : {}), ...(typeof body.password === "string" ? { password: body.password } : {}), ...(typeof body.userId === "string" ? { userId: body.userId } : {}) });
       setMessage("Änderung gespeichert.");
       await load();
       return true;
@@ -101,17 +103,7 @@ export default function AdminPanel() {
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch("/api/admin/support", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          reportId: report.id,
-          resolved: !report.resolved,
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Aktion fehlgeschlagen.");
+      await convex.mutation(api.support.change, { action, reportId: report.id as Id<"support">, resolved: !report.resolved });
       setMessage(action === "delete" ? "Meldung gelöscht." : "Status aktualisiert.");
       await load();
     } catch (err) {
@@ -260,6 +252,7 @@ export default function AdminPanel() {
         )}
       </AccordionSection>
 
+      {data?.cursors.reports && <button className="secondary-button" disabled={busy} onClick={() => more("reports")}>Weitere Meldungen laden</button>}
       {/* Benutzerverwaltung */}
       <AccordionSection
         title="Mitarbeiter"
@@ -409,6 +402,8 @@ export default function AdminPanel() {
           {message}
         </aside>
       )}
+      {data?.cursors.users && <button className="secondary-button" disabled={busy} onClick={() => more("users")}>Weitere Mitarbeiter laden</button>}
+      {data?.cursors.devices && <button className="secondary-button" disabled={busy} onClick={() => more("devices")}>Weitere Geräte laden</button>}
     </main>
   );
 }

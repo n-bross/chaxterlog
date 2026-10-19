@@ -1,5 +1,6 @@
 import { getDevice } from "./device";
 import { readRecords, type VisitRecord } from "./sync-state";
+import { displayCounts } from "./sync";
 import { dayKey } from "./tracking";
 
 export interface DiagnosticPayload {
@@ -49,13 +50,15 @@ export function collectDiagnostics(notes?: string): DiagnosticPayload {
 
   const unsynced = records.filter((r) => !r.synced);
   const today = dayKey();
-  const todayCounts = { u15: 0, o15: 0 };
+  let todayCounts = { u15: 0, o15: 0 };
   for (const r of records) {
     if (dayKey(new Date(r.timestamp)) === today && !r.cancelled) {
       if (r.group === "u15") todayCounts.u15++;
       if (r.group === "o15") todayCounts.o15++;
     }
   }
+
+  try { if (typeof localStorage !== "undefined") todayCounts = displayCounts(localStorage, today); } catch { /* Keep diagnostic fallback when storage is unavailable. */ }
 
   const nav = typeof navigator !== "undefined" ? navigator : undefined;
   const win = typeof window !== "undefined" ? window : undefined;
@@ -96,15 +99,9 @@ export function collectDiagnostics(notes?: string): DiagnosticPayload {
 
 export async function sendDiagnosticReport(notes?: string): Promise<{ ok: boolean; id?: string; error?: string }> {
   const payload = collectDiagnostics(notes);
-  const response = await fetch("/api/support", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data.error ?? "Fehler beim Senden des Diagnoseberichts.");
-  }
-  return data;
+  try {
+    const { convex } = await import("./convex-client");
+    const { api } = await import("@/convex/_generated/api");
+    return await convex.mutation(api.support.send, { payload: JSON.stringify(payload) });
+  } catch { return { ok: false, error: "Fehler beim Senden des Diagnoseberichts." }; }
 }

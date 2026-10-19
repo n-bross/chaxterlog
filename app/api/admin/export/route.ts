@@ -1,123 +1,52 @@
-import { sessionFor } from "@/lib/access";
-import { database } from "@/lib/database";
+import { fetchAuthQuery, isAuthenticated } from "@/lib/auth-server";
+import { api } from "@/convex/_generated/api";
 import { csv, validDay } from "@/lib/export";
+import { dayKey } from "@/lib/tracking";
 export const runtime = "nodejs";
-
+type Row = Record<string, unknown>;
+const time = (timestamp: unknown) => new Date(String(timestamp)).toLocaleTimeString("de-DE", { timeZone: "Europe/Berlin", hour12: false });
+const date = (timestamp: unknown) => dayKey(new Date(String(timestamp)));
+const columns = {
+  daily: ["Datum (Europe/Berlin)", "U15", "Ü15", "Gesamt"],
+  csv: ["ID", "Datum (Berlin)", "Uhrzeit (Berlin)", "Zeitpunkt (UTC)", "Gruppe", "Status", "Benutzer", "Geräte-ID", "Gerätename beim Klick", "System / Browser", "Altbestand", "Importiert von", "Storniert von", "Storniert um (UTC)", "Redo von Besuchs-ID"],
+  corrections: ["Aktions-ID", "Knopf", "Datum (Berlin)", "Uhrzeit (Berlin)", "Zeitpunkt (UTC)", "Benutzer", "Geräte-ID", "Gerät des Korrekturknopfs", "System / Browser", "Besuchs-ID", "Gruppe", "Ursprünglicher Besuch (UTC)", "Serverempfang (UTC)"],
+};
+function cells(format: "csv" | "daily" | "corrections", row: Row) {
+  if (format === "daily") return [row.date, row.u15, row.o15, Number(row.u15) + Number(row.o15)];
+  if (format === "corrections") return [row.id, row.kind === "undo" ? "Undo" : "Redo", date(row.timestamp), time(row.timestamp), row.timestamp, row.username, row.deviceId, row.deviceName, row.platform, row.visitId, row.group === "u15" ? "U15" : "Ü15", row.visitTimestamp, row.receivedAt];
+  return [row.id, date(row.timestamp), time(row.timestamp), row.timestamp, row.group === "u15" ? "U15" : "Ü15", row.cancelled ? "storniert" : "gezählt", row.username, row.deviceId, row.deviceName, row.platform, row.legacy ? "ja" : "nein", row.importedBy, row.cancelledBy, row.cancelledAt, row.redoOf];
+}
 export async function GET(request: Request) {
-  const session = await sessionFor(request);
-  if (!session) return new Response(null, { status: 401 });
+  if (!await isAuthenticated()) return new Response(null, { status: 401 });
+  const actor = await fetchAuthQuery(api.auth.currentUser, {});
+  if (!actor) return new Response(null, { status: 401 });
+  if (actor.role !== "admin") return new Response(null, { status: 403 });
   const params = new URL(request.url).searchParams;
-  const from = params.get("from") || "2000-01-01",
-    to = params.get("to") || "2099-12-31";
+  const from = params.get("from") || "2000-01-01", to = params.get("to") || "2100-12-31";
   const format = params.get("format") || "csv";
-  if (!validDay(from) || !validDay(to) || from > to || !["csv", "daily", "json", "corrections"].includes(format))
-    return Response.json({ error: "Ungültiger Zeitraum oder Dateityp." }, { status: 400 });
-  const rows = await database()`SELECT *, to_char(occurred_at AT TIME ZONE 'Europe/Berlin', 'YYYY-MM-DD') AS day,
-    to_char(occurred_at AT TIME ZONE 'Europe/Berlin', 'HH24:MI:SS') AS time
-    FROM chaxter_visits WHERE (occurred_at AT TIME ZONE 'Europe/Berlin')::date BETWEEN ${from}::date AND ${to}::date ORDER BY occurred_at, id`;
-  const corrections =
-    format === "json" || format === "corrections"
-      ? await database()`SELECT c.*, v.age_group, v.occurred_at AS visit_time, v.redo_of,
-    to_char(c.occurred_at AT TIME ZONE 'Europe/Berlin', 'YYYY-MM-DD') AS day,
-    to_char(c.occurred_at AT TIME ZONE 'Europe/Berlin', 'HH24:MI:SS') AS time
-    FROM chaxter_corrections c JOIN chaxter_visits v ON v.id=c.visit_id
-    WHERE (c.occurred_at AT TIME ZONE 'Europe/Berlin')::date BETWEEN ${from}::date AND ${to}::date ORDER BY c.occurred_at, c.id`
-      : [];
-  let body: string;
-  if (format === "json")
-    body = JSON.stringify(
-      { exportedAt: new Date().toISOString(), timezone: "Europe/Berlin", from, to, records: rows, corrections },
-      null,
-      2
-    );
-  else if (format === "corrections")
-    body = csv([
-      [
-        "Aktions-ID",
-        "Knopf",
-        "Datum (Berlin)",
-        "Uhrzeit (Berlin)",
-        "Zeitpunkt (UTC)",
-        "Benutzer",
-        "Geräte-ID",
-        "Gerät des Korrekturknopfs",
-        "System / Browser",
-        "Besuchs-ID",
-        "Gruppe",
-        "Ursprünglicher Besuch (UTC)",
-        "Serverempfang (UTC)",
-      ],
-      ...corrections.map((item) => [
-        item.id,
-        item.kind === "undo" ? "Undo" : "Redo",
-        item.day,
-        item.time,
-        new Date(item.occurred_at).toISOString(),
-        item.username,
-        item.device_id,
-        item.device_name,
-        item.platform,
-        item.visit_id,
-        item.age_group === "u15" ? "U15" : "Ü15",
-        new Date(item.visit_time).toISOString(),
-        new Date(item.received_at).toISOString(),
-      ]),
-    ]);
-  else if (format === "daily") {
-    const days = new Map<string, { u15: number; o15: number }>();
-    for (const row of rows) {
-      if (row.cancelled) continue;
-      const values = days.get(row.day) ?? { u15: 0, o15: 0 };
-      values[row.age_group as "u15" | "o15"]++;
-      days.set(row.day, values);
-    }
-    body = csv([
-      ["Datum (Europe/Berlin)", "U15", "Ü15", "Gesamt"],
-      ...[...days].map(([day, values]) => [day, values.u15, values.o15, values.u15 + values.o15]),
-    ]);
-  } else
-    body = csv([
-      [
-        "ID",
-        "Datum (Berlin)",
-        "Uhrzeit (Berlin)",
-        "Zeitpunkt (UTC)",
-        "Gruppe",
-        "Status",
-        "Benutzer",
-        "Geräte-ID",
-        "Gerätename beim Klick",
-        "System / Browser",
-        "Altbestand",
-        "Importiert von (Benutzer-ID)",
-        "Storniert von",
-        "Storniert um (UTC)",
-        "Redo von Besuchs-ID",
-      ],
-      ...rows.map((row) => [
-        row.id,
-        row.day,
-        row.time,
-        new Date(row.occurred_at).toISOString(),
-        row.age_group === "u15" ? "U15" : "Ü15",
-        row.cancelled ? "storniert" : "gezählt",
-        row.username,
-        row.device_id,
-        row.device_name,
-        row.platform,
-        row.legacy ? "ja" : "nein",
-        row.imported_by,
-        row.cancelled_by,
-        row.cancelled_at ? new Date(row.cancelled_at).toISOString() : "",
-        row.redo_of,
-      ]),
-    ]);
-  return new Response(body, {
-    headers: {
-      "Content-Type": format === "json" ? "application/json; charset=utf-8" : "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="chaxterlog-${format}-${from}-${to}.${format === "json" ? "json" : "csv"}"`,
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+  if (!validDay(from) || !validDay(to) || from > to || !["csv", "daily", "json", "corrections"].includes(format)) return Response.json({ error: "Ungültiger Zeitraum oder Dateityp." }, { status: 400 });
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({ async start(controller) {
+    const emit = (value: string) => controller.enqueue(encoder.encode(value));
+    try {
+      const kinds = format === "json" ? ["visits", "corrections"] as const : [format === "daily" ? "daily" : format === "corrections" ? "corrections" : "visits"] as const;
+      if (format === "json") emit(`{"exportedAt":${JSON.stringify(new Date().toISOString())},"timezone":"Europe/Berlin","from":${JSON.stringify(from)},"to":${JSON.stringify(to)},"records":[`);
+      else emit(csv([columns[format as keyof typeof columns]]));
+      for (let index = 0; index < kinds.length; index++) {
+        let cursor: string | null = null, first = true;
+        if (format === "json" && index) emit('],"corrections":[');
+        do {
+          const page: { page: Row[]; isDone: boolean; continueCursor: string } = await fetchAuthQuery(api.exports.page, { kind: kinds[index], from, to, paginationOpts: { cursor, numItems: 100 } });
+          for (const row of page.page as Row[]) {
+            if (format === "json") { emit(`${first ? "" : ","}${JSON.stringify(row)}`); first = false; }
+            else emit(csv([cells(format as "csv" | "daily" | "corrections", row)]).slice(1));
+          }
+          cursor = page.isDone ? null : page.continueCursor;
+        } while (cursor && !request.signal.aborted);
+      }
+      if (format === "json") emit("]}");
+      controller.close();
+    } catch (error) { controller.error(error); }
+  } });
+  return new Response(stream, { headers: { "Content-Type": format === "json" ? "application/json; charset=utf-8" : "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="chaxterlog-${format}-${from}-${to}.${format === "json" ? "json" : "csv"}"`, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 }

@@ -1,6 +1,6 @@
 import { dayKey, isTrackEvent, STORAGE_PREFIX, type TrackEvent } from "./tracking.ts";
 
-export type VisitRecord = TrackEvent & { cancelled: boolean; synced?: boolean };
+export type VisitRecord = TrackEvent & { cancelled: boolean; synced?: boolean; baseline?: number; activeRevision?: number; confirmed?: { cancelled: boolean; revision: number } };
 export const eventKey = (event: TrackEvent) => `${STORAGE_PREFIX}${dayKey(new Date(event.timestamp))}:${event.id}`;
 
 export function isVisitRecord(value: unknown): value is VisitRecord {
@@ -29,20 +29,5 @@ export function queueVisit(storage: Storage, event: TrackEvent, cancelled = fals
   const key = eventKey(event);
   const previous = storage.getItem(key);
   const value = previous ? JSON.parse(previous) as VisitRecord : null;
-  storage.setItem(key, JSON.stringify({ ...event, cancelled: cancelled || value?.cancelled === true, synced: false }));
-}
-
-export function mergeRemote(storage: Storage, records: VisitRecord[]) {
-  for (const remote of records) {
-    const key = eventKey(remote);
-    const raw = storage.getItem(key);
-    const local = raw ? JSON.parse(raw) as VisitRecord : null;
-    const cancelled = remote.cancelled || local?.cancelled === true;
-    const acknowledged = new Set((remote.corrections ?? []).map((item) => item.id));
-    const waiting = (local?.corrections ?? []).filter((item) => !acknowledged.has(item.id));
-    const corrections = [...remote.corrections ?? [], ...waiting];
-    const merged = { ...remote, cancelled, ...(corrections.length ? { corrections } : {}), synced: cancelled === remote.cancelled && waiting.length === 0 };
-    const serialized = JSON.stringify(merged);
-    if (serialized !== raw) storage.setItem(key, serialized);
-  }
+  storage.setItem(key, JSON.stringify({ ...event, baseline: value?.baseline ?? (value?.synced && !value.cancelled ? 1 : 0), cancelled: cancelled || value?.cancelled === true, synced: false }));
 }

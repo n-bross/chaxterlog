@@ -1,206 +1,100 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readCounts, STORAGE_PREFIX, type TrackEvent } from "./tracking.ts";
-import { eventKey, mergeRemote, queueVisit, readRecords, type VisitRecord } from "./sync-state.ts";
-import { synchronize, type Fetcher } from "./sync.ts";
-
+import { dayKey, undoLastClick, type TrackEvent } from "./tracking.ts";
+import { eventKey, queueVisit, readRecords, type VisitRecord } from "./sync-state.ts";
+import { applySnapshot, displayCounts, orderedPending, synchronize, type Upload } from "./sync.ts";
+import { redoLastClick } from "./corrections.ts";
 function storageMock(): Storage {
   const data = new Map<string, string>();
-  return {
-    get length() { return data.size; }, key: (i) => [...data.keys()][i] ?? null,
-    getItem: (key) => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value); },
-    removeItem: (key) => { data.delete(key); }, clear: () => data.clear(),
-  };
+  return { get length() { return data.size; }, key: (i) => [...data.keys()][i] ?? null, getItem: (key) => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value); }, removeItem: (key) => { data.delete(key); }, clear: () => data.clear() };
 }
-const visit = (i: number, group: "u15" | "o15" = "u15"): TrackEvent => ({ id: `e3d907b1-05aa-4eac-89a0-${String(i).padStart(12, "0")}`, group, timestamp: "2026-10-17T12:00:00.000Z", order: i });
-function server() {
-  const records = new Map<string, VisitRecord>();
-  const fetcher: Fetcher = async (_url, init) => {
-    if (init?.method === "POST") {
-      const incoming = JSON.parse(String(init.body)).records as VisitRecord[];
-      const saved = incoming.map((event) => {
-        const previous = records.get(event.id);
-        const result = { ...(previous ?? event), cancelled: event.cancelled || previous?.cancelled === true };
-        records.set(event.id, result);
-        return result;
-      });
-      return Response.json({ persisted: true, records: saved });
-    }
-    return Response.json({ records: [...records.values()] });
-  };
-  return { records, fetcher };
-}
-
-test("two isolated browsers migrate old data, share new clicks and deduplicate retries", async () => {
-  const a = storageMock(), b = storageMock(), backend = server();
-  a.setItem(eventKey(visit(1)), JSON.stringify(visit(1))); // Existing local-only installation.
-  b.setItem(eventKey(visit(1)), JSON.stringify(visit(1))); // Same event copied previously.
-  b.setItem("unrelated", "keep");
-  queueVisit(b, visit(2, "o15"));
-  await Promise.all([synchronize(a, backend.fetcher), synchronize(b, backend.fetcher)]);
-  await synchronize(a, backend.fetcher);
-  await synchronize(b, backend.fetcher);
-  assert.deepEqual(readCounts(a, "2026-10-17"), { u15: 1, o15: 1 });
-  assert.deepEqual(readCounts(b, "2026-10-17"), { u15: 1, o15: 1 });
-  assert.equal(backend.records.size, 2);
-  assert.equal(b.getItem("unrelated"), "keep");
-  assert.ok(readRecords(a).every((event) => event.synced));
+const day = "2026-10-17";
+const visit = (i: number): TrackEvent => ({ id: `e3d907b1-05aa-4eac-89a0-${String(i).padStart(12, "0")}`, group: "u15", timestamp: `${day}T12:00:00.000Z`, order: i });
+const ack: Upload = async (records) => records.map((r) => ({ id: r.id, cancelled: r.cancelled, date: dayKey(new Date(r.timestamp)), revision: 1 }));
+test("failed uploads and reload preserve the durable queue", async () => {
+  const s = storageMock(); queueVisit(s, visit(1));
+  await assert.rejects(synchronize(s, async () => { throw new Error("offline"); }));
+  assert.equal(readRecords(s)[0].synced, false);
+  await synchronize(s, ack); assert.equal(readRecords(s)[0].synced, true);
+});
+test("acknowledgement keeps optimistic counts until the daily revision arrives", async () => {
+  const s = storageMock(); applySnapshot(s, { date: day, u15: 5, o15: 0, revision: 0, targets: [] }); queueVisit(s, visit(1));
+  assert.equal(displayCounts(s, day).u15, 6);
+  await synchronize(s, ack); assert.equal(displayCounts(s, day).u15, 6);
+  applySnapshot(s, { date: day, u15: 6, o15: 0, revision: 1, targets: [{ ...visit(1), cancelled: false }] });
+  assert.equal(displayCounts(s, day).u15, 6); assert.equal(readRecords(s).length, 1);
+});
+test("late acknowledgement cannot discard an undo written during the request", async () => {
+  const s = storageMock(); queueVisit(s, visit(1));
+  await synchronize(s, async (records) => { undoLastClick(s, day); return ack(records); });
+  assert.equal(readRecords(s)[0].cancelled, true); assert.equal(readRecords(s)[0].synced, false);
+  applySnapshot(s, { date: day, u15: 1, o15: 0, revision: 1, targets: [{ ...visit(1), cancelled: false }] });
+  assert.equal(displayCounts(s, day).u15, 0);
+  await synchronize(s, async (records) => (await ack(records)).map((a) => ({ ...a, revision: 2 })));
+  applySnapshot(s, { date: day, u15: 0, o15: 0, revision: 2, targets: [] });
+  assert.equal(displayCounts(s, day).u15, 0);
+});
+test("undo of a shared target subtracts one, and stale snapshots preserve pending actions", () => {
+  const s = storageMock(), target = { ...visit(1), cancelled: false };
+  applySnapshot(s, { date: day, u15: 10, o15: 2, revision: 3, targets: [target] }); undoLastClick(s, day);
+  applySnapshot(s, { date: day, u15: 10, o15: 2, revision: 3, targets: [target] });
+  assert.equal(displayCounts(s, day).u15, 9); assert.equal(readRecords(s)[0].synced, false);
+  applySnapshot(s, { date: day, u15: 2, o15: 0, revision: 1, targets: [] }); assert.equal(displayCounts(s, day).u15, 9);
+});
+test("queue sorts dependent redo chains before batching, bounds count and bytes", async () => {
+  const s = storageMock(); queueVisit(s, visit(1)); undoLastClick(s, day, { id: visit(900).id, kind: "undo", timestamp: visit(1).timestamp });
+  const redo = redoLastClick(s, { id: visit(901).id, kind: "redo", timestamp: visit(1).timestamp }, day)!;
+  const reversed = readRecords(s).reverse(); assert.deepEqual(orderedPending(reversed).map((r) => r.id), [visit(1).id, redo.id]);
+  for (let i = 2; i < 250; i++) queueVisit(s, visit(i));
+  const batches: VisitRecord[][] = [];
+  await synchronize(s, async (batch) => { batches.push(batch); return ack(batch); });
+  assert.ok(batches.flat().every((event) => !("baseline" in event) && !("confirmed" in event)));
+  assert.ok(batches.length >= 3); assert.ok(batches.every((batch) => batch.length <= 100 && JSON.stringify(batch).length < 120_000));
+  assert.equal(batches.flat().findIndex((r) => r.id === redo.id) > batches.flat().findIndex((r) => r.id === visit(1).id), true);
+});
+test("a lost acknowledgement retries the same UUID and preserves permanent cancellation", async () => {
+  const s = storageMock(); queueVisit(s, visit(1), true); const seen = new Set<string>();
+  await assert.rejects(synchronize(s, async (records) => { records.forEach((r) => seen.add(r.id)); throw new Error("lost response"); }));
+  await synchronize(s, async (records) => { records.forEach((r) => seen.add(r.id)); return ack(records); });
+  assert.equal(seen.size, 1); assert.equal(readRecords(s)[0].cancelled, true);
+});
+test("user switch refuses another user's pending visits and corrections", async () => {
+  const s = storageMock(); queueVisit(s, { ...visit(1), userId: "first" });
+  await assert.rejects(synchronize(s, ack, undefined, "second"), /anderen Benutzer/);
+  await assert.rejects(synchronize(s, ack, { id: visit(999).id, name: "Tablet", platform: "Browser" }, "second"), /anderen Benutzer/);
+  assert.equal(readRecords(s)[0].synced, false);
+});
+test("snapshot pruning leaves unrelated storage and pending queue intact", () => {
+  const s = storageMock(); s.setItem("unrelated", "keep");
+  for (let i = 1; i < 30; i++) s.setItem(eventKey(visit(i)), JSON.stringify({ ...visit(i), cancelled: false, synced: true }));
+  queueVisit(s, visit(30)); applySnapshot(s, { date: day, u15: 29, o15: 0, revision: 1, targets: [{ ...visit(29), cancelled: false }] });
+  assert.equal(readRecords(s).length, 2); assert.equal(s.getItem("unrelated"), "keep");
 });
 
-test("remote Undo wins over delayed offline uploads and survives reload", async () => {
-  const a = storageMock(), b = storageMock(), backend = server();
-  queueVisit(a, visit(1));
-  await synchronize(a, backend.fetcher);
-  await synchronize(b, backend.fetcher);
-  queueVisit(a, visit(1), true);
-  await synchronize(a, backend.fetcher);
-  queueVisit(b, visit(1)); // Stale offline browser replays the original click.
-  await synchronize(b, backend.fetcher);
-  assert.deepEqual(readCounts(b, "2026-10-17"), { u15: 0, o15: 0 });
-  assert.equal(readRecords(b)[0].cancelled, true);
-  assert.equal(readRecords(b)[0].synced, true);
-  await synchronize(b, backend.fetcher);
-  assert.equal(backend.records.get(visit(1).id)?.cancelled, true);
+test("create then undo acknowledgements remain correct across an intermediate live revision", async () => {
+  const s = storageMock(); applySnapshot(s, { date: day, u15: 0, o15: 0, revision: 0, targets: [] });
+  queueVisit(s, visit(1)); await synchronize(s, ack); undoLastClick(s, day);
+  await synchronize(s, async (records) => (await ack(records)).map((a) => ({ ...a, revision: 2 })));
+  applySnapshot(s, { date: day, u15: 1, o15: 0, revision: 1, targets: [{ ...visit(1), cancelled: false }] });
+  assert.equal(displayCounts(s, day).u15, 0);
+  applySnapshot(s, { date: day, u15: 0, o15: 0, revision: 2, targets: [] });
+  assert.equal(displayCounts(s, day).u15, 0);
 });
 
-test("failed requests keep the queue durable, then replay it exactly once", async () => {
-  const storage = storageMock(), backend = server();
-  queueVisit(storage, visit(1));
-  await assert.rejects(synchronize(storage, async () => Response.json({}, { status: 503 })));
-  assert.equal(readRecords(storage)[0].synced, false);
-  assert.deepEqual(readCounts(storage, "2026-10-17"), { u15: 1, o15: 0 });
-  await synchronize(storage, backend.fetcher);
-  await synchronize(storage, backend.fetcher);
-  assert.equal(backend.records.size, 1);
+test("an older response cannot regress a newer cancellation acknowledgement", async () => {
+  const s = storageMock(); queueVisit(s, visit(1));
+  let release!: () => void;
+  const delayed = synchronize(s, async (records) => { await new Promise<void>((resolve) => { release = resolve; }); return ack(records); });
+  undoLastClick(s, day);
+  await synchronize(s, async (records) => (await ack(records)).map((a) => ({ ...a, revision: 2 })));
+  release(); await delayed;
+  assert.equal(readRecords(s)[0].synced, true); assert.equal(readRecords(s)[0].confirmed?.revision, 2);
 });
 
-test("an Undo made while POST is in flight is not overwritten by the acknowledgement", async () => {
-  const storage = storageMock(), backend = server();
-  queueVisit(storage, visit(1));
-  let intercepted = false;
-  const fetcher: Fetcher = async (url, init) => {
-    const response = await backend.fetcher(url, init);
-    if (init?.method === "POST" && !intercepted) {
-      intercepted = true;
-      queueVisit(storage, visit(1), true);
-    }
-    return response;
-  };
-  assert.equal(await synchronize(storage, fetcher), 1);
-  assert.equal(readRecords(storage)[0].cancelled, true);
-  await synchronize(storage, backend.fetcher);
-  assert.equal(backend.records.get(visit(1).id)?.cancelled, true);
-});
-
-test("migration uploads more than one batch and retains dates and times", async () => {
-  const storage = storageMock(), backend = server();
-  for (let i = 1; i <= 405; i++) queueVisit(storage, visit(i));
-  await synchronize(storage, backend.fetcher);
-  assert.equal(backend.records.size, 405);
-  assert.equal(readRecords(storage)[404].timestamp, visit(405).timestamp);
-  assert.ok(readRecords(storage).every((event) => event.synced));
-});
-
-test("remote merge preserves unsent clicks and ignores malformed legacy entries", () => {
-  const storage = storageMock();
-  storage.setItem(`${STORAGE_PREFIX}corrupt`, "{broken");
-  queueVisit(storage, visit(1));
-  mergeRemote(storage, [{ ...visit(2), cancelled: false }]);
-  assert.equal(readRecords(storage).length, 2);
-  assert.equal(readRecords(storage).find((event) => event.id === visit(1).id)?.synced, false);
-});
-
-test("old stub responses cannot falsely acknowledge queued visits", async () => {
-  const storage = storageMock();
-  queueVisit(storage, visit(1));
-  await assert.rejects(synchronize(storage, async () => Response.json({ accepted: true, persisted: false })));
-  assert.equal(readRecords(storage)[0].synced, false);
-});
-
-
-test("legacy migration adds its browser device without inventing the original user", async () => {
-  const storage = storageMock(), backend = server();
-  storage.setItem(eventKey(visit(1)), JSON.stringify(visit(1)));
-  await synchronize(storage, backend.fetcher, { id: visit(2).id, name: "Kasse", platform: "Android / Chrome" });
-  const saved = backend.records.get(visit(1).id)!;
-  assert.equal(saved.deviceName, "Kasse");
-  assert.equal(saved.legacy, true);
-  assert.equal(saved.userId, undefined);
-});
-
-test("lost acknowledgement after server commit retries with the same ID", async () => {
-  const storage = storageMock(), backend = server();
-  queueVisit(storage, visit(1));
-  await assert.rejects(synchronize(storage, async (url, init) => {
-    await backend.fetcher(url, init);
-    throw new Error("connection lost after commit");
-  }));
-  assert.equal(readRecords(storage)[0].synced, false);
-  assert.equal(backend.records.size, 1);
-  await synchronize(storage, backend.fetcher);
-  assert.equal(backend.records.size, 1);
-  assert.equal(readRecords(storage)[0].synced, true);
-});
-
-const epoch = "e3d907b1-05aa-4eac-89a0-000000000999";
-test("unchanged polls use the persisted cursor instead of downloading history again", async () => {
-  const storage = storageMock();
-  const urls: string[] = [];
-  let bytes = 0;
-  const history = Array.from({ length: 1000 }, (_, i) => ({ ...visit(i), cancelled: false }));
-  const fetcher: Fetcher = async (url) => {
-    urls.push(url);
-    const body = { records: url.includes("since=") ? [] : history, cursor: `${epoch}:10` };
-    bytes += JSON.stringify(body).length;
-    return Response.json(body);
-  };
-  await synchronize(storage, fetcher);
-  const initialBytes = bytes;
-  // A fresh synchronize call represents reloads too: the cursor lives with the records.
-  await synchronize(storage, fetcher);
-  assert.equal(new URL(urls[1], "http://localhost").searchParams.get("since"), `${epoch}:10`);
-  assert.ok(bytes - initialBytes < 150);
-  assert.equal(readRecords(storage).length, 1000);
-});
-
-test("a failed local merge retries the same delta before advancing the cursor", async () => {
-  const storage = storageMock();
-  await synchronize(storage, async () => Response.json({ records: [], cursor: `${epoch}:1` }));
-  const setItem = storage.setItem;
-  storage.setItem = () => { throw new Error("storage full"); };
-  await assert.rejects(synchronize(storage, async () => Response.json({ records: [{ ...visit(1), cancelled: false }], cursor: `${epoch}:2` })));
-  storage.setItem = setItem;
-  await synchronize(storage, async (url) => {
-    assert.equal(new URL(url, "http://localhost").searchParams.get("since"), `${epoch}:1`);
-    return Response.json({ records: [{ ...visit(1), cancelled: true }], cursor: `${epoch}:2` });
-  });
-  assert.equal(readRecords(storage)[0].cancelled, true);
-});
-
-test("upload acknowledgements do not skip changes made by another device", async () => {
-  const storage = storageMock();
-  await synchronize(storage, async () => Response.json({ records: [], cursor: `${epoch}:1` }));
-  queueVisit(storage, visit(1));
-  await synchronize(storage, async (url, init) => {
-    if (init?.method === "POST") return Response.json({ records: [{ ...visit(1), cancelled: false }], cursor: `${epoch}:3` });
-    assert.equal(new URL(url, "http://localhost").searchParams.get("since"), `${epoch}:1`);
-    return Response.json({ records: [{ ...visit(2), cancelled: false }], cursor: `${epoch}:3` });
-  });
-  assert.equal(readRecords(storage).length, 2);
-});
-
-test("a database restore can replace a cursor that is ahead of the server", async () => {
-  const storage = storageMock();
-  await synchronize(storage, async () => Response.json({ records: [], cursor: `${epoch}:100` }));
-  await synchronize(storage, async () => Response.json({ records: [{ ...visit(1), cancelled: false }], cursor: `${epoch}:2` }));
-  await synchronize(storage, async (url) => {
-    assert.equal(new URL(url, "http://localhost").searchParams.get("since"), `${epoch}:2`);
-    return Response.json({ records: [], cursor: `${epoch}:2` });
-  });
-});
-
-test("invalid cursors do not acknowledge records or advance synchronization", async () => {
-  const storage = storageMock();
-  await assert.rejects(synchronize(storage, async () => Response.json({ records: [{ ...visit(1), cancelled: false }], cursor: "bad" })));
-  assert.equal(readRecords(storage).length, 0);
+test("a fresh database replaces a higher cached revision without deleting pending clicks", () => {
+  const s = storageMock();
+  applySnapshot(s, { date: day, epoch: "old", u15: 100, o15: 0, revision: 100, targets: [{ ...visit(1), cancelled: false }] });
+  queueVisit(s, visit(2));
+  applySnapshot(s, { date: day, epoch: "fresh", u15: 0, o15: 0, revision: 0, targets: [] });
+  assert.equal(displayCounts(s, day).u15, 1); assert.deepEqual(readRecords(s).map((r) => r.id), [visit(2).id]);
 });

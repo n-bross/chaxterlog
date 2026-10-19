@@ -7,3 +7,5 @@ out/
 !.env.example
 .DS_Store
 .vercel
+.convex/
+.convex-test/
