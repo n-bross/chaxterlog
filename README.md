@@ -162,6 +162,25 @@ Für Vercel:
 
 Produktionsadresse: https://chaxterlog.vercel.app. Bei Domainwechsel `SITE_URL` im richtigen Convex-Deployment und die öffentlichen Website-Variablen aktualisieren. Preview-Deployments brauchen ein eigenes Convex-Deployment mit passender Auth-Origin; keine produktive Zählung oder Benutzer für unkontrollierte Previews teilen.
 
+### Vercel-Previews
+
+`vercel.json` setzt den Build-Befehl auf `scripts/vercel-build.sh`. Produktion baut weiter mit `npm run build`. Preview-Builds legen pro Branch ein eigenes Convex-Preview-Deployment an, deployen die Funktionen, bauen die Website gegen dessen URL und setzen dort `SITE_URL` auf die Branch-URL (`VERCEL_BRANCH_URL`). Die `.site`-Adresse wird aus `NEXT_PUBLIC_CONVEX_URL` abgeleitet.
+
+Einmalig:
+
+1. Im Convex-Dashboard unter Project Settings einen **Preview Deploy Key** erzeugen und in Vercel als `CONVEX_DEPLOY_KEY` nur für **Preview** hinterlegen.
+2. Gemeinsames Auth-Secret für alle Previews (nicht das Produktions-Secret):
+
+   ```bash
+   openssl rand -base64 32 | npx convex env default set --type preview BETTER_AUTH_SECRET
+   ```
+
+Jede Preview startet mit leerer Datenbank. Admin für einen Branch vorbereiten (`SITE_URL` ist die Branch-URL aus Vercel, `--preview-name` der Git-Branch):
+
+```bash
+SITE_URL=https://chaxterlog-git-t3-mein-branch-nbross.vercel.app node scripts/setup-admin.mjs --preview-name t3/mein-branch
+```
+
 ## Homescreen
 
 Android/Chrome: Menü → „Installieren und Verknüpfung erstellen“. iOS/Safari: Teilen → „Zum Home-Bildschirm“. Manifest, PNG-Icons, maskierbares Icon und Apple-Touch-Icon sind enthalten. Split Screen und schwebende Browserfenster stellt das Betriebssystem bereit.
