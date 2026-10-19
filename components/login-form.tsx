@@ -1,5 +1,8 @@
 "use client";
 import { useState, type FormEvent } from "react";
+import { convex } from "@/lib/convex-client";
+import { api } from "@/convex/_generated/api";
+import { readRecords } from "@/lib/sync-state";
 import { authClient } from "@/lib/auth-client";
 import { FloatingLabelInput } from "./interior/floating-label";
 import ChaxterLogo from "./chaxter-logo";
@@ -20,15 +23,11 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
       if (setup) {
         if (password !== form.get("confirm")) throw new Error("Die Passwörter stimmen nicht überein.");
         const token = window.location.hash.slice(1);
-        const response = await fetch("/api/setup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, password }),
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error ?? "Einrichtung fehlgeschlagen.");
+        await convex.mutation(api.setup.complete, { token, password });
         history.replaceState(null, "", "/einrichten");
       }
+      const pending = readRecords(localStorage).filter((r) => !r.synced);
+      if (pending.some((r) => (!r.legacy && !r.baseline && r.username && r.username !== username) || r.corrections?.some((c) => c.username && c.username !== username))) throw new Error("Offene Klicks gehören zu einem anderen Benutzer. Bitte zuerst mit diesem Konto anmelden und synchronisieren.");
       const result = await authClient.signIn.username({ username, password });
       if (result.error)
         throw new Error(

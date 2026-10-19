@@ -17,11 +17,12 @@ const shortDate = (day: string) =>
 interface EventPerformanceProps {
   events: ChaxterEvent[];
   visits: TrackEvent[];
+  days?: { date: string; u15: number; o15: number }[];
   onSelectDay?: (date: string) => void;
 }
 
-export default function EventPerformance({ events, visits, onSelectDay }: EventPerformanceProps) {
-  const analysis = useMemo(() => analyzeEventsAttendance(events, visits), [events, visits]);
+export default function EventPerformance({ events, visits, days, onSelectDay }: EventPerformanceProps) {
+  const analysis = useMemo(() => analyzeEventsAttendance(events, visits, days), [events, visits, days]);
 
   const maxGroupAverage = useMemo(() => {
     return Math.max(1, ...analysis.eventGroups.map((g) => g.averageVisits));

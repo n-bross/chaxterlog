@@ -10,21 +10,19 @@
     "test": "node --experimental-strip-types --test lib/*.test.ts"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.2.0",
-    "better-auth": "^1.7.10",
+    "@convex-dev/better-auth": "^0.12.5",
+    "better-auth": "1.6.33",
+    "convex": "^1.47.0",
+    "convex-helpers": "^0.1.128",
     "motion": "^14.3.0",
     "next": "16.4.2",
-    "pg": "^8.23.1",
-    "postgres": "^3.4.9",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "uuid": "^14.0.3"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.10",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^24",
-    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "tailwindcss": "4.3.3",

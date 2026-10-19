@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readCounts, readDay, undoLastClick, isTrackEvent, type TrackEvent } from "./tracking.ts";
-import { queueVisit, readRecords, mergeRemote, type VisitRecord } from "./sync-state.ts";
+import { queueVisit, readRecords } from "./sync-state.ts";
 import { latestRedo, redoLastClick, redoId, correctionEntries } from "./corrections.ts";
-import { synchronize, type Fetcher } from "./sync.ts";
+
 import type { Correction } from "./correction-types.ts";
 const day = "2026-10-17";
 function storage(): Storage {
@@ -13,20 +13,6 @@ function storage(): Storage {
 const id = (i: number) => `e3d907b1-05aa-4eac-89a0-${String(i).padStart(12,"0")}`;
 const visit = (i=1): TrackEvent => ({id:id(i),group:"u15",timestamp:`${day}T12:00:00.000Z`,order:i});
 const action = (i: number,kind: "undo"|"redo",device="Tablet A"): Correction => ({id:id(i+100),kind,timestamp:`${day}T13:00:00.000Z`,order:i,userId:"operator",username:"team",deviceId:id(999),deviceName:device});
-function server() {
-  const records=new Map<string,VisitRecord>();
-  const fetcher: Fetcher=async (_url,init)=>{
-    if(init?.method==='POST'){
-      const incoming=JSON.parse(String(init.body)).records as VisitRecord[];
-      const saved=incoming.map(event=>{
-        const old=records.get(event.id);
-        const corrections=[...new Map([...(old?.corrections??[]),...(event.corrections??[])].map(item=>[item.id,item])).values()];
-        const merged={...(old??event),cancelled:event.cancelled||old?.cancelled===true,corrections};records.set(event.id,merged);return merged;
-      });return Response.json({records:saved,persisted:true});
-    }return Response.json({records:[...records.values()]});
-  };
-  return {records,fetcher};
-}
 test("offline Undo/Redo chains retain original time, counts and every button press",()=>{
   const s=storage();queueVisit(s,visit());
   undoLastClick(s,day,action(1,'undo'));assert.deepEqual(readCounts(s,day),{u15:0,o15:0});
@@ -48,24 +34,12 @@ test("Redo is newest-first, survives reload and stops when nothing remains",()=>
   assert.equal(redoLastClick(s,action(7,'redo'),day),null);
   assert.deepEqual(readCounts(s,day),{u15:1,o15:1});
 });
-test("two isolated devices pressing Redo simultaneously restore one visit and log both presses",async()=>{
-  const a=storage(),b=storage(),backend=server();
-  queueVisit(a,visit());undoLastClick(a,day,action(1,'undo'));
-  await synchronize(a,backend.fetcher);await synchronize(b,backend.fetcher);
+test("two devices restoring the same visit choose the same deterministic replacement",()=>{
+  const a=storage(),b=storage();
+  for(const s of [a,b]) { queueVisit(s,visit()); undoLastClick(s,day,action(1,'undo')); }
   const first=redoLastClick(a,action(2,'redo','Tablet A'),day)!;
   const second=redoLastClick(b,action(3,'redo','Tablet B'),day)!;
-  assert.equal(first.id,second.id);
-  await Promise.all([synchronize(a,backend.fetcher),synchronize(b,backend.fetcher)]);
-  await synchronize(a,backend.fetcher);await synchronize(b,backend.fetcher);
-  assert.deepEqual(readCounts(a,day),{u15:1,o15:0});assert.deepEqual(readCounts(b,day),{u15:1,o15:0});
-  assert.equal([...backend.records.values()].filter(e=>!e.cancelled).length,1);
-  assert.equal(correctionEntries(readRecords(a)).filter(e=>e.kind==='redo').length,2);
-});
-test("late acknowledgements cannot erase an unsent correction",()=>{
-  const s=storage();const event={...visit(),cancelled:false,synced:true};mergeRemote(s,[event]);
-  undoLastClick(s,day,action(1,'undo'));mergeRemote(s,[event]);
-  assert.equal(readRecords(s)[0].synced,false);assert.equal(readRecords(s)[0].corrections?.length,1);
-  assert.equal(readDay(s,day).latest,null);
+  assert.equal(first.id,second.id); assert.equal(first.id,redoId(visit().id));
 });
 test("failed Redo storage writes leave counts and eligibility untouched",()=>{
   const s=storage();queueVisit(s,visit());undoLastClick(s,day,action(1,'undo'));

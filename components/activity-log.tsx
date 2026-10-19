@@ -253,6 +253,7 @@ export default function ActivityLog({
                     </span>
                     <span className="activity-device">
                       📱 {item.deviceName || item.platform || "Gerät nicht erfasst"}
+                      {item.deviceName && item.platform && <small> · {item.platform}</small>}
                       {item.deviceId && <small> (ID: {item.deviceId.slice(0, 8)})</small>}
                     </span>
                   </div>

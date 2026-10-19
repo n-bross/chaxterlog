@@ -2,18 +2,18 @@
 
 import Link from "next/link";
 import ChaxterLogo from "@/components/chaxter-logo";
-import ActivityLog from "@/components/activity-log";
+import RemoteActivity from "@/components/remote-activity";
+import { listDays } from "@/lib/client-data";
+import type { DailyAggregate } from "@/lib/aggregation";
 import EventsManager from "@/components/events-manager";
-import EventPerformance from "@/components/event-performance";
-import { readRecords, type VisitRecord } from "@/lib/sync-state";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { dayKey, readEvents, STORAGE_PREFIX, type TrackEvent } from "@/lib/tracking";
-import { analyzeEvents, periodRange, shiftPeriod, addDays, type Period } from "@/lib/statistics";
+import EventAnalytics from "@/components/event-analytics";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { dayKey } from "@/lib/tracking";
+import { analyzeAggregates, periodRange, shiftPeriod, addDays, type Period } from "@/lib/statistics";
 import type { ChaxterEvent } from "@/lib/events";
 import { exportSummaryGraphic, exportSingleChartGraphic } from "@/lib/chart-export";
 
-import { useVisitSync } from "@/lib/use-visit-sync";
-import SyncStatus from "@/components/sync-status";
+
 import { Accordion } from "./interior/accordion";
 import { SegmentedControl } from "./interior/segmented-control";
 import { Modal } from "./interior/modal";
@@ -88,17 +88,18 @@ function Bars({ rows, label, stacked = false }: { rows: Bar[]; label: string; st
 function StatisticsSection({ title, description, children }: {
   title: string; description: string; children: React.ReactNode;
 }) {
-  return <Accordion className="statistics-accordion" headingLevel={2} maxPanelHeight={100000}
-    items={[{ id: "section", title: <span className="statistics-section-heading"><span>{title}</span><span>{description}</span></span>, content: children }]} />;
+  const [open, setOpen] = useState<readonly string[]>([]);
+  return <Accordion className="statistics-accordion" headingLevel={2} maxPanelHeight={100000} open={open} onOpenChange={setOpen}
+    items={[{ id: "section", title: <span className="statistics-section-heading"><span>{title}</span><span>{description}</span></span>, content: open.includes("section") ? children : null }]} />;
 }
 
-export default function Statistics() {
+export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
   const [anchor, setAnchor] = useState("");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [period, setPeriod] = useState<Period>("day");
-  const [records, setRecords] = useState<VisitRecord[]>([]);
-  const [events, setEvents] = useState<TrackEvent[]>([]);
+  const requestId = useRef(0);
+  const [days, setDays] = useState<DailyAggregate[]>([]);
   const [eventsList, setEventsList] = useState<ChaxterEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
@@ -108,55 +109,26 @@ export default function Statistics() {
   const [exportFrom, setExportFrom] = useState("");
   const [exportTo, setExportTo] = useState("");
 
-  const load = useCallback(() => {
-    try {
-      setEvents(readEvents(localStorage));
-      setRecords(readRecords(localStorage));
-      setError(false);
-    } catch {
-      setError(true);
-    }
-    setLoaded(true);
-  }, []);
-
-  const syncStatus = useVisitSync(load);
-
   useEffect(() => {
-    const today = dayKey();
-    setAnchor(today);
-    setCustomEnd(today);
-    setCustomStart(addDays(today, -29));
-    load();
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === null || event.key.startsWith(STORAGE_PREFIX)) load();
-    };
-    const onVisible = () => {
-      if (document.visibilityState === "visible") load();
-    };
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("focus", load);
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("focus", load);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [load]);
+    const today = dayKey(); setAnchor(today); setCustomEnd(today); setCustomStart(addDays(today, -29));
+  }, []);
 
   const activeAnchor = period === "custom" ? (customStart || "2000-01-01") : (anchor || "2000-01-01");
   const activeCustomEnd = period === "custom" ? (customEnd || anchor || "2099-12-31") : undefined;
 
-  const stats = useMemo(
-    () => analyzeEvents(events, period, activeAnchor, activeCustomEnd),
-    [events, period, activeAnchor, activeCustomEnd]
-  );
-  const range = useMemo(
-    () => periodRange(period, activeAnchor, activeCustomEnd),
-    [period, activeAnchor, activeCustomEnd]
-  );
-
-  // When viewing a single day, show the week around this day in the trend instead of 24 empty hours
-  const weekStats = useMemo(() => analyzeEvents(events, "week", activeAnchor), [events, activeAnchor]);
+  const range = useMemo(() => periodRange(period, activeAnchor, activeCustomEnd), [period, activeAnchor, activeCustomEnd]);
+  const load = useCallback(async () => {
+    const id = ++requestId.current;
+    setLoaded(false);
+    try {
+      const week = period === "day" ? periodRange("week", activeAnchor) : range;
+      const result = await listDays(week?.start, week?.end);
+      if (id === requestId.current) { setDays(result); setError(false); setLoaded(true); }
+    } catch { if (id === requestId.current) setError(true); }
+  }, [range, period, activeAnchor]);
+  useEffect(() => { if (anchor) void load(); }, [load, anchor]);
+  const stats = useMemo(() => analyzeAggregates(days, period, activeAnchor, activeCustomEnd), [days, period, activeAnchor, activeCustomEnd]);
+  const weekStats = useMemo(() => analyzeAggregates(days, "week", activeAnchor), [days, activeAnchor]);
 
   const eventsMap = useMemo(() => {
     const map = new Map<string, ChaxterEvent>();
@@ -248,7 +220,7 @@ export default function Statistics() {
           <div className="account-brand">
             <ChaxterLogo />
           </div>
-          <SyncStatus status={syncStatus} />
+          <span className="analytics-basis">{loaded ? "Stand beim Laden" : "Lädt …"}</span>
         </div>
       </header>
 
@@ -316,7 +288,7 @@ export default function Statistics() {
 
       {error ? (
         <p role="alert" className="error-message">
-          Browserspeicher nicht verfügbar.{" "}
+          Daten konnten nicht geladen werden.{" "}
           <button className="underline" onClick={load}>
             Erneut versuchen
           </button>
@@ -343,6 +315,8 @@ export default function Statistics() {
               ? `${stats.recordedDays} erfasste Tage · Ø ${number.format(stats.average)} Besuche pro erfasstem Tag`
               : "Daten werden geladen …"}
           </p>
+
+          {loaded && stats.recordedDays > 0 && stats.recordedDays < 7 && <p className="analytics-note">Erste Tendenz: weniger als sieben erfasste Tage.</p>}
 
           {loaded && stats.total > 0 && (
             <>
@@ -427,6 +401,10 @@ export default function Statistics() {
                     rows={trendRows}
                   />
                 </section>
+              </StatisticsSection>
+
+              <StatisticsSection title="Stundenverteilung" description="Besuche nach Berliner Uhrzeit im gewählten Zeitraum">
+                <section className="analytics-panel"><Bars stacked label="Besuche nach Stunde" rows={stats.hours.map((hour) => ({ ...hour, value: hour.total, detail: `U15 ${hour.u15}, Ü15 ${hour.o15}` }))} /></section>
               </StatisticsSection>
 
               <StatisticsSection title="Wochentage & beste Tage" description="Wochentagsvergleich und Rangliste der Besuchstage">
@@ -515,7 +493,7 @@ export default function Statistics() {
           )}
 
           <StatisticsSection title="Event-Auswertung" description="Besuche bei einzelnen Events und Event-Kategorien">
-            <EventPerformance events={eventsList} visits={events} onSelectDay={(d) => { setPeriod("day"); setAnchor(d); }} />
+            <EventAnalytics onSelectDay={(d) => { setPeriod("day"); setAnchor(d); }} />
           </StatisticsSection>
           <div id="events">
             <StatisticsSection title="Events verwalten" description="Events eintragen, bearbeiten oder importieren">
@@ -523,7 +501,7 @@ export default function Statistics() {
             </StatisticsSection>
           </div>
           <StatisticsSection title="Aktivitätsprotokoll" description="Einzelne Besuche und Undo-/Redo-Korrekturen">
-            <ActivityLog records={records} range={range} />
+            <RemoteActivity range={range} />
           </StatisticsSection>
         </>
       )}
@@ -586,6 +564,7 @@ export default function Statistics() {
             </p>
           ) : (
             <>
+              {isAdmin && <>
               <div className="download-section-heading">CSV- &amp; JSON-Exporte</div>
               <div className="button-row download-button-group">
                 <LoadingButton
@@ -626,6 +605,7 @@ export default function Statistics() {
                 </LoadingButton>
               </div>
 
+              </>}
               <div className="download-section-heading" style={{ marginTop: 12 }}>Grafik-Export</div>
               <div className="button-row">
                 <LoadingButton

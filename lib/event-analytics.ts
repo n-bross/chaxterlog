@@ -79,7 +79,7 @@ export function categorizeEvent(title: string): { label: string; icon: string } 
  * - All-time best event
  * - Event groups ranked by average visits
  */
-export function analyzeEventsAttendance(events: ChaxterEvent[], visits: TrackEvent[]) {
+export function analyzeEventsAttendance(events: ChaxterEvent[], visits: TrackEvent[], days?: { date: string; u15: number; o15: number }[]) {
   // Aggregate visits by date
   const visitsByDate = new Map<string, { u15: number; o15: number; total: number }>();
   for (const visit of visits) {
@@ -91,6 +91,8 @@ export function analyzeEventsAttendance(events: ChaxterEvent[], visits: TrackEve
     current.total++;
     visitsByDate.set(dateKey, current);
   }
+
+  if (days) for (const day of days) visitsByDate.set(day.date, { u15: day.u15, o15: day.o15, total: day.u15 + day.o15 });
 
   // Connect each event with visit counts
   const eventsWithStats: EventWithStats[] = events.map((event) => {
