@@ -1,5 +1,5 @@
 "use client";
-import { convex } from "@/lib/convex-client";
+import { convex, waitForConnection } from "@/lib/convex-client";
 import { api } from "@/convex/_generated/api";
 import { synchronize } from "@/lib/sync";
 import Link from "next/link";
@@ -47,7 +47,7 @@ export default function Account({ user }: { user: { username: string; role: stri
       const value = renameDevice(String(new FormData(event.currentTarget).get("name")));
       setDevice(value);
       savedLocally = true;
-      if (!navigator.onLine || !convex.connectionState().isWebSocketConnected) throw new Error("offline");
+      if (!await waitForConnection()) throw new Error("offline");
       await convex.mutation(api.devices.rename, value);
       setMessage("Gerätename gespeichert. Neue Klicks verwenden diesen Namen.");
     } catch {
@@ -86,7 +86,7 @@ export default function Account({ user }: { user: { username: string; role: stri
     setBusy("logout");
     setMessage("");
     try {
-      if (!navigator.onLine || !convex.connectionState().isWebSocketConnected) throw new Error("offline");
+      if (!await waitForConnection()) throw new Error("offline");
       const actor = await convex.query(api.auth.currentUser, {});
       const left = await synchronize(localStorage, (records) => convex.mutation(api.visits.upload, { records }), getDevice(), actor?.id);
       if (left) throw new Error("Offene Klicks zuerst synchronisieren.");

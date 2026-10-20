@@ -1,4 +1,5 @@
-import { fetchAuthQuery, isAuthenticated } from "@/lib/auth-server";
+import { fetchQuery } from "convex/nextjs";
+import { getToken } from "@/lib/auth-server";
 import { api } from "@/convex/_generated/api";
 import { csv, validDay } from "@/lib/export";
 import { dayKey } from "@/lib/tracking";
@@ -17,8 +18,10 @@ function cells(format: "csv" | "daily" | "corrections", row: Row) {
   return [row.id, date(row.timestamp), time(row.timestamp), row.timestamp, row.group === "u15" ? "U15" : "Ü15", row.cancelled ? "storniert" : "gezählt", row.username, row.deviceId, row.deviceName, row.platform, row.legacy ? "ja" : "nein", row.importedBy, row.cancelledBy, row.cancelledAt, row.redoOf];
 }
 export async function GET(request: Request) {
-  if (!await isAuthenticated()) return new Response(null, { status: 401 });
-  const actor = await fetchAuthQuery(api.auth.currentUser, {});
+  // One JWT for the whole download: fetching a token per page would hit the auth rate limit on large exports.
+  const token = await getToken();
+  if (!token) return new Response(null, { status: 401 });
+  const actor = await fetchQuery(api.auth.currentUser, {}, { token });
   if (!actor) return new Response(null, { status: 401 });
   if (actor.role !== "admin") return new Response(null, { status: 403 });
   const params = new URL(request.url).searchParams;
@@ -36,7 +39,7 @@ export async function GET(request: Request) {
         let cursor: string | null = null, first = true;
         if (format === "json" && index) emit('],"corrections":[');
         do {
-          const page: { page: Row[]; isDone: boolean; continueCursor: string } = await fetchAuthQuery(api.exports.page, { kind: kinds[index], from, to, paginationOpts: { cursor, numItems: 100 } });
+          const page: { page: Row[]; isDone: boolean; continueCursor: string } = await fetchQuery(api.exports.page, { kind: kinds[index], from, to, paginationOpts: { cursor, numItems: 100 } }, { token });
           for (const row of page.page as Row[]) {
             if (format === "json") { emit(`${first ? "" : ","}${JSON.stringify(row)}`); first = false; }
             else emit(csv([cells(format as "csv" | "daily" | "corrections", row)]).slice(1));

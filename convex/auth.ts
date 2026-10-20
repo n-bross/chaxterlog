@@ -17,7 +17,12 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => ({
   trustedOrigins: process.env.SITE_URL ? [process.env.SITE_URL] : [], database: authComponent.adapter(ctx),
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 10, maxPasswordLength: 128 },
   session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: false } },
-  rateLimit: { enabled: true, storage: "database", window: 60, max: 60, customRules: { "/sign-in/username": { window: 60, max: 5 } } },
+  // Buckets are per IP and path; all café devices share one NAT IP. Token and session reads need a valid
+  // session cookie and run on every page load, so they get a generous limit. Convex fetches JWKS itself.
+  rateLimit: { enabled: true, storage: "database", window: 60, max: 60, customRules: {
+    "/sign-in/username": { window: 60, max: 5 },
+    "/convex/token": { window: 60, max: 1000 }, "/get-session": { window: 60, max: 1000 }, "/convex/jwks": false,
+  } },
   user: { changeEmail: { enabled: false } },
   disabledPaths: ["/sign-up/email", "/sign-in/email", "/request-password-reset", "/reset-password", "/update-user", "/change-email", "/delete-user"],
   plugins: [admin(), username({ minUsernameLength: 3, maxUsernameLength: 30, usernameValidator: (value: string) => /^[a-z0-9_.-]{3,30}$/i.test(value) }), convex({ authConfig })],

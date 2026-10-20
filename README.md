@@ -53,7 +53,7 @@ Prüfung, Benutzeranlage und Verbrauch des Tokens laufen in einer Convex-Transak
 
 - Anmeldung mit **Benutzername und Passwort**, ohne E-Mail-Eingabe, E-Mail-Versand oder öffentliche Registrierung. E-Mail-Anmeldung und öffentliche Profiländerungen sind deaktiviert.
 - Better Auth benötigt intern eine zufällige Adresse unter `chaxter.invalid`; sie ist keine echte E-Mail-Adresse und wird nicht angezeigt.
-- Better Auth hasht Passwörter. Sitzungen liegen in der Convex-Auth-Komponente, Cookies sind HttpOnly und über HTTPS Secure. Sitzungen gelten höchstens 30 Tage. Benutzername-Anmeldung erlaubt fünf Versuche pro Minute und IP; das Limit wird in Convex gespeichert.
+- Better Auth hasht Passwörter. Sitzungen liegen in der Convex-Auth-Komponente, Cookies sind HttpOnly und über HTTPS Secure. Sitzungen gelten höchstens 30 Tage. Benutzername-Anmeldung erlaubt fünf Versuche pro Minute und IP; das Limit wird in Convex gespeichert. Alle Geräte im Café-WLAN teilen sich eine öffentliche IP. Token- und Sitzungsabfragen (`/convex/token`, `/get-session`) haben deshalb ein großzügiges eigenes Limit, und Convex' Schlüsselabruf (`/convex/jwks`) ist ausgenommen.
 - `/`, `/statistik` und `/konto` sind serverseitig geschützt. `/admin` prüft zusätzlich die Admin-Rolle und leitet Mitarbeiter zur Zählung zurück. Jede öffentliche Convex-Datenfunktion prüft die Sitzung; jede Admin-Funktion und jeder Export prüft die Rolle erneut anhand des aktuellen Auth-Benutzers. Gesperrte Benutzer werden auch mit noch vorhandenem JWT abgewiesen.
 - Der Admin-Link steht ausschließlich bei Admins unter Konto. Admins erstellen Mitarbeiter, sperren und entsperren sie oder setzen ihr Passwort zurück. Sperren und Passwortreset beenden bestehende Sitzungen.
 - Unter Konto ändert jeder Benutzer sein Passwort; andere Sitzungen dieses Kontos werden beendet. Ohne E-Mail gibt es keinen E-Mail-Passwortreset.
@@ -133,7 +133,7 @@ npm run build
 npx convex dev --once --typecheck enable --typecheck-components
 ```
 
-Die Pure-Logic-Tests prüfen Berliner Datumsgrenzen/Zeitumstellung, Aggregate und Statistik, persistente Queue, verlorene Bestätigungen, Uploadfehler, Benutzerwechsel, abhängige Redos, Stapelgrenzen, Korrekturen, CSV und Update-Schutz. Auth, Rollen, mehrere Geräte, Offline-Rückkehr und Exporte zusätzlich gegen ein getrenntes Convex-Entwicklungsdeployment prüfen. Ein lokales anonymes Deployment ist mit `CONVEX_AGENT_MODE=anonymous npx convex dev --once` möglich, sofern die Systembibliotheken zum lokalen Convex-Backend passen.
+`npm test` führt zuerst die Pure-Logic-Tests und danach die Convex-Funktionstests (`convex/*.test.ts`, `convex-test` mit Vitest) aus. Die Funktionstests prüfen Zugriffsschutz und Rollen, gesperrte Benutzer, Upload-Deduplizierung, permanente Stornierungen, Redo von mehreren Geräten, Benutzerzuordnung, Stapelgrenzen und den Admin-Export. Die Pure-Logic-Tests prüfen Berliner Datumsgrenzen/Zeitumstellung, Aggregate und Statistik, persistente Queue, verlorene Bestätigungen, Uploadfehler, Benutzerwechsel, abhängige Redos, Stapelgrenzen, Korrekturen, CSV und Update-Schutz. Auth, Rollen, mehrere Geräte, Offline-Rückkehr und Exporte zusätzlich gegen ein getrenntes Convex-Entwicklungsdeployment prüfen. Ein lokales anonymes Deployment ist mit `CONVEX_AGENT_MODE=anonymous npx convex dev --once` möglich, sofern die Systembibliotheken zum lokalen Convex-Backend passen.
 
 Für Vercel:
 
@@ -146,11 +146,7 @@ Für Vercel:
    ```
 
 3. In Vercel `CONVEX_DEPLOY_KEY` als geheime Produktionsvariable hinterlegen. `NEXT_PUBLIC_CONVEX_SITE_URL` auf die Produktions-`.site`-Adresse und `NEXT_PUBLIC_SITE_URL` auf die Website-Origin setzen. `NEXT_PUBLIC_CONVEX_URL` wird vom folgenden Build-Befehl gesetzt; ein vorhandener Wert muss zum Produktionsdeployment passen.
-4. Vercel-Build-Befehl:
-
-   ```bash
-   npx convex deploy --cmd 'npm run build' --cmd-url-env-var-name NEXT_PUBLIC_CONVEX_URL
-   ```
+4. Der Build-Befehl steht in `vercel.json` (`scripts/vercel-build.sh`) und führt in Produktion `npx convex deploy --cmd 'npm run build' --cmd-url-env-var-name NEXT_PUBLIC_CONVEX_URL` aus. Website und Convex-Funktionen gehen so immer gemeinsam live. Fehlt der Key oder ist es kein Produktions-Key (`prod:…`), bricht der Build ab.
 
 5. Nach dem ersten erfolgreichen Deployment den Produktions-Admin vorbereiten:
 
@@ -164,7 +160,7 @@ Produktionsadresse: https://chaxterlog.vercel.app. Bei Domainwechsel `SITE_URL` 
 
 ### Vercel-Previews
 
-`vercel.json` setzt den Build-Befehl auf `scripts/vercel-build.sh`. Produktion baut weiter mit `npm run build`. Preview-Builds legen pro Branch ein eigenes Convex-Preview-Deployment an, deployen die Funktionen, und bauen die Website gegen dessen URL. Die `.site`-Adresse wird aus `NEXT_PUBLIC_CONVEX_URL` abgeleitet. Previews haben kein festes `SITE_URL`; Better Auth übernimmt die Origin pro Anfrage, wenn sie zu `SITE_ALLOWED_HOSTS` passt. Das Skript bricht ab, wenn `CONVEX_DEPLOY_KEY` kein Preview-Key (`preview:…`) ist, damit Previews nie in Dev oder Produktion deployen.
+`vercel.json` setzt den Build-Befehl auf `scripts/vercel-build.sh`. Produktion deployt mit dem Produktions-Key (siehe oben). Preview-Builds legen pro Branch ein eigenes Convex-Preview-Deployment an, deployen die Funktionen, und bauen die Website gegen dessen URL. Die `.site`-Adresse wird aus `NEXT_PUBLIC_CONVEX_URL` abgeleitet. Previews haben kein festes `SITE_URL`; Better Auth übernimmt die Origin pro Anfrage, wenn sie zu `SITE_ALLOWED_HOSTS` passt. Das Skript bricht ab, wenn `CONVEX_DEPLOY_KEY` kein Preview-Key (`preview:…`) ist, damit Previews nie in Dev oder Produktion deployen.
 
 Einmalig:
 
