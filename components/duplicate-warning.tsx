@@ -14,7 +14,7 @@ export default function DuplicateWarning({ warning, onUndo, onDismiss }: {
 }) {
   const group = warning.group === "u15" ? "U15" : "Ü15";
   const seconds = warning.diffSeconds || 1;
-  const description = `Mögliche Doppelzählung: 2× ${group} innerhalb von ${seconds} ${seconds === 1 ? "Sekunde" : "Sekunden"} erfasst (${warning.user1} und ${warning.user2}).`;
+  const description = `Mögliche Doppelzählung: 2× ${group} innerhalb von ${seconds} ${seconds === 1 ? "Sekunde" : "Sekunden"} erfasst (${warning.user1 === warning.user2 ? `beide von ${warning.user1}` : `${warning.user1} und ${warning.user2}`}).`;
 
   return (
     <aside className="duplicate-notice" role="alert" title={description}>

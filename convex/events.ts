@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { query, mutation } from "./_generated/server";
 import { requireActor } from "./auth";
@@ -10,9 +10,9 @@ export const list = query({ args: { from: v.optional(v.string()), to: v.optional
 } });
 export const save = mutation({ args: { events: v.array(v.object({ id: v.optional(v.string()), date: v.string(), title: v.string(), description: v.optional(v.string()) })) }, handler: async (ctx, { events }) => {
   const actor = await requireActor(ctx);
-  if (!events.length || events.length > 100) throw new Error("Maximal 100 Events pro Stapel.");
+  if (!events.length || events.length > 100) throw new ConvexError("Maximal 100 Events pro Stapel.");
   for (const e of events) {
-    if (!validDay(e.date) || !e.title.trim() || e.title.length > 200 || (e.description?.length ?? 0) > 1000) throw new Error("Ungültiges Event.");
+    if (!validDay(e.date) || !e.title.trim() || e.title.length > 200 || (e.description?.length ?? 0) > 1000) throw new ConvexError("Ungültiges Event.");
     const old = e.id ? await ctx.db.query("events").withIndex("uuid", (q) => q.eq("id", e.id!)).unique() : null;
     if (old) await ctx.db.patch(old._id, { date: e.date, title: e.title.trim(), description: e.description ?? "" });
     else await ctx.db.insert("events", { ...e, id: e.id ?? crypto.randomUUID(), title: e.title.trim(), createdAt: new Date().toISOString(), createdBy: actor.username });

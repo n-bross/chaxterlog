@@ -1,4 +1,5 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
 import { convex } from "@/lib/convex-client";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -53,6 +54,7 @@ export default function AdminPanel() {
   const [expandedReportId, setExpandedReportId] = useState<string | null>(null);
   const [createPassword, setCreatePassword] = useState("");
   const [resetUserId, setResetUserId] = useState<string>("");
+  const [createUsername, setCreateUsername] = useState("");
   const [resetPassword, setResetPassword] = useState("");
 
   const load = useCallback(async () => {
@@ -92,7 +94,7 @@ export default function AdminPanel() {
       await load();
       return true;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Verbindung fehlgeschlagen.");
+      setMessage(errorMessage(error, "Änderung fehlgeschlagen. Bitte Verbindung prüfen."));
       return false;
     } finally {
       setBusy(false);
@@ -107,7 +109,7 @@ export default function AdminPanel() {
       setMessage(action === "delete" ? "Meldung gelöscht." : "Status aktualisiert.");
       await load();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Verbindung fehlgeschlagen.");
+      setMessage(errorMessage(err, "Änderung fehlgeschlagen. Bitte Verbindung prüfen."));
     } finally {
       setBusy(false);
     }
@@ -119,6 +121,7 @@ export default function AdminPanel() {
       values = new FormData(form);
     if (await change({ action: "create", username: values.get("username"), password: values.get("password") })) {
       form.reset();
+      setCreateUsername("");
       setCreatePassword("");
     }
   }
@@ -127,10 +130,11 @@ export default function AdminPanel() {
     event.preventDefault();
     const form = event.currentTarget,
       values = new FormData(form);
+    if (!effectiveResetUserId) { setMessage("Bitte zuerst einen Mitarbeiter auswählen."); return; }
     if (
       await change({
         action: "password",
-        userId: values.get("userId"),
+        userId: effectiveResetUserId,
         password: values.get("password"),
       })
     ) {
@@ -141,7 +145,8 @@ export default function AdminPanel() {
 
   const openReportsCount = data?.reports?.filter((r) => !r.resolved).length ?? 0;
   const nonAdminUsers = data?.users.filter((user) => user.role !== "admin") ?? [];
-  const effectiveResetUserId = resetUserId || nonAdminUsers[0]?.id || "";
+  // No preselected user: resetting the wrong colleague's password must be a deliberate choice.
+  const effectiveResetUserId = nonAdminUsers.some((user) => user.id === resetUserId) ? resetUserId : "";
 
   return (
     <main className="manage-screen">
@@ -304,10 +309,13 @@ export default function AdminPanel() {
         <form onSubmit={create}>
           <FloatingLabelInput label="Benutzername"
               name="username"
+              value={createUsername}
+              onChange={(val) => setCreateUsername(val.toLowerCase())}
+              hint="3–30 Zeichen: Kleinbuchstaben a–z, Ziffern, Punkt, Unterstrich oder Bindestrich. Keine Umlaute oder Leerzeichen."
               required
               minLength={3}
               maxLength={30}
-              pattern="[a-zA-Z0-9_.\-]{3,30}"
+              pattern="[a-z0-9_.\-]{3,30}"
               autoCapitalize="none"
               autoComplete="off"
               spellCheck={false}

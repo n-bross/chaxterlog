@@ -150,10 +150,10 @@ export default function ActivityLog({
         <div>
           <h3 className="text-base font-semibold">Verlauf &amp; Protokoll</h3>
           <p className="text-xs text-muted">
-            Chronologische Nachvollziehbarkeit: Zählungen, Rückgängig (Undo) &amp; Wiederhergestellt (Redo)
+            Zählungen, Stornierungen und Wiederherstellungen. Die einzelnen Undo-/Redo-Aktionen stehen unter „Undo &amp; Redo“.
           </p>
         </div>
-        <span className="analytics-basis">{filtered.length} Aktionen</span>
+        <span className="analytics-basis">{filtered.length} {filtered.length === 1 ? "Eintrag" : "Einträge"} auf dieser Seite</span>
       </div>
 
       {/* Filter Tabs */}
@@ -162,7 +162,7 @@ export default function ActivityLog({
         options={[
           { value: "all", label: `Alle (${items.length})` },
           { value: "visits", label: `Gezählt (${items.filter((item) => item.kind === "visit" && !item.cancelled).length})` },
-          { value: "corrections", label: `Korrekturen (${countCorrections})` },
+          ...(countCorrections > 0 ? [{ value: "corrections", label: `Korrekturen (${countCorrections})` }] : []),
           ...(countCancelled > 0 ? [{ value: "cancelled", label: `Storniert (${countCancelled})` }] : []),
         ]} />
 
@@ -243,7 +243,7 @@ export default function ActivityLog({
 
                   {item.isRapidFollow && !item.cancelled && (
                     <p className="activity-explanation text-warning">
-                      ⚠️ <strong>Mögliche Doppelzählung:</strong> Dieser Klick erfolgte {item.rapidDiffSeconds} Sekunden nach einer vorherigen {isU15 ? "U15" : "Ü15"}-Erfassung.
+                      ⚠️ <strong>Mögliche Doppelzählung:</strong> Dieser Klick erfolgte {item.rapidDiffSeconds} {item.rapidDiffSeconds === 1 ? "Sekunde" : "Sekunden"} nach einer vorherigen {isU15 ? "U15" : "Ü15"}-Erfassung.
                     </p>
                   )}
 

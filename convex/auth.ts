@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
@@ -17,10 +18,12 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => ({
   trustedOrigins: process.env.SITE_URL ? [process.env.SITE_URL] : [], database: authComponent.adapter(ctx),
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 10, maxPasswordLength: 128 },
   session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, cookieCache: { enabled: false } },
-  // Buckets are per IP and path; all café devices share one NAT IP. Token and session reads need a valid
-  // session cookie and run on every page load, so they get a generous limit. Convex fetches JWKS itself.
+  // Buckets are per IP and path. Logins arrive through the website's server, so all café devices share one
+  // bucket: 20 attempts/minute lets several staff sign in together while still stopping password guessing.
+  // Token and session reads need a valid session cookie and run on every page load, so they get a generous
+  // limit. Convex fetches JWKS itself.
   rateLimit: { enabled: true, storage: "database", window: 60, max: 60, customRules: {
-    "/sign-in/username": { window: 60, max: 5 },
+    "/sign-in/username": { window: 60, max: 20 },
     "/convex/token": { window: 60, max: 1000 }, "/get-session": { window: 60, max: 1000 }, "/convex/jwks": false,
   } },
   user: { changeEmail: { enabled: false } },
@@ -30,8 +33,8 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => ({
 export const createAuth = (ctx: GenericCtx<DataModel>) => betterAuth(createAuthOptions(ctx));
 export async function requireActor(ctx: GenericCtx<DataModel>, adminOnly = false) {
   const user = await authComponent.safeGetAuthUser(ctx);
-  if (!user || user.banned) throw new Error("Anmeldung erforderlich.");
-  if (adminOnly && user.role !== "admin") throw new Error("Admin erforderlich.");
+  if (!user || user.banned) throw new ConvexError("Anmeldung erforderlich.");
+  if (adminOnly && user.role !== "admin") throw new ConvexError("Admin erforderlich.");
   return { id: user._id, username: user.username ?? user.name, role: user.role ?? "user" };
 }
 export const currentUser = query({ args: {}, handler: async (ctx) => {

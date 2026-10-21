@@ -5,7 +5,10 @@ import { api } from "@/convex/_generated/api";
 import { LOCAL_CHANGE, SyncError, synchronize } from "./sync";
 import { getDevice } from "./device";
 import { readRecords } from "./sync-state";
-export type SyncState = { state: "connecting" | "synced" | "pending" | "offline" | "conflict"; pending: number; message?: string };
+import { errorMessage } from "./errors";
+export type SyncState = { state: "connecting" | "synced" | "pending" | "retrying" | "offline" | "conflict"; pending: number; message?: string };
+// A rejected upload (e.g. many devices writing the same day at once) is retried without waiting for the next click.
+const RETRY_DELAYS = [2_000, 5_000, 10_000, 30_000, 60_000];
 function useQueueSync(onChange: () => void): SyncState {
   const client = useConvex();
   const { isAuthenticated } = useConvexAuth();
@@ -13,13 +16,15 @@ function useQueueSync(onChange: () => void): SyncState {
   const [status, setStatus] = useState<SyncState>({ state: "connecting", pending: 0 });
   useEffect(() => {
     if (!isAuthenticated) return;
-    let stopped = false, running = false, again = false;
+    let stopped = false, running = false, again = false, attempts = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const pendingCount = () => readRecords(localStorage).filter((r) => !r.synced).length;
     const safePendingCount = () => { try { return pendingCount(); } catch { return 0; } };
     async function flush() {
       if (stopped) return;
       if (running) { again = true; return; }
       running = true;
+      clearTimeout(retryTimer);
       try {
         const pending = pendingCount();
         setStatus({ state: pending ? "pending" : "synced", pending });
@@ -30,8 +35,17 @@ function useQueueSync(onChange: () => void): SyncState {
           const left = await synchronize(localStorage, (records) => client.mutation(api.visits.upload, { records }), getDevice(), actor?.id);
           if (!stopped) setStatus({ state: left ? "pending" : "synced", pending: left });
         }
+        attempts = 0;
       } catch (error) {
-        if (!stopped) setStatus(error instanceof SyncError || error instanceof Error && error.message.includes("anderen Benutzer") ? { state: "conflict", pending: safePendingCount(), message: error.message } : { state: "offline", pending: safePendingCount() });
+        const message = errorMessage(error, "");
+        if (stopped) return;
+        if (error instanceof SyncError || message.includes("anderen Benutzer")) setStatus({ state: "conflict", pending: safePendingCount(), message: message || "Benutzerzugang prüfen" });
+        else if (!navigator.onLine) setStatus({ state: "offline", pending: safePendingCount() });
+        else {
+          const delay = RETRY_DELAYS[Math.min(attempts++, RETRY_DELAYS.length - 1)];
+          setStatus({ state: "retrying", pending: safePendingCount(), message: `Übertragung fehlgeschlagen, neuer Versuch in ${delay / 1000} s` });
+          retryTimer = setTimeout(() => void flush(), delay);
+        }
       } finally {
         running = false;
         if (!stopped) onChange();
@@ -47,7 +61,7 @@ function useQueueSync(onChange: () => void): SyncState {
     window.addEventListener("focus", changed);
     window.addEventListener("storage", storage);
     document.addEventListener("visibilitychange", visible);
-    return () => { stopped = true; window.removeEventListener(LOCAL_CHANGE, changed); window.removeEventListener("online", changed); window.removeEventListener("focus", changed); window.removeEventListener("storage", storage); document.removeEventListener("visibilitychange", visible); };
+    return () => { stopped = true; clearTimeout(retryTimer); window.removeEventListener(LOCAL_CHANGE, changed); window.removeEventListener("online", changed); window.removeEventListener("focus", changed); window.removeEventListener("storage", storage); document.removeEventListener("visibilitychange", visible); };
   }, [client, isAuthenticated, connection.isWebSocketConnected, onChange]);
   return status;
 }
