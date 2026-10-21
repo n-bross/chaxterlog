@@ -6,6 +6,7 @@ import { updateAggregate } from "../lib/aggregation";
 import { validDay } from "../lib/export";
 import { requireActor, authComponent, createAuth } from "./auth";
 import type { Doc } from "./_generated/dataModel";
+import { qrIdentifier } from "./qrLogin";
 // Better Auth errors are plain errors, which production Convex hides; translate them for the admin.
 async function authCall(run: () => Promise<unknown>, fallback: string) {
   try { await run(); } catch (error) {
@@ -24,6 +25,8 @@ export const change = mutation({ args: { action: v.string(), username: v.optiona
     const target = args.userId ? await ctx.runQuery(components.betterAuth.management.user, { id: args.userId }) : null;
     if (!target || target.id === actor.id || target.role === "admin") throw new ConvexError("Dieser Zugang kann hier nicht geändert werden.");
     const userId = target.id as string;
+    // Blocking, a new password or removal also invalidates the person's login QR code.
+    if (["ban", "password", "remove"].includes(args.action)) await (await auth.$context).internalAdapter.deleteVerificationByIdentifier(qrIdentifier(userId));
     if (args.action === "ban") await authCall(() => auth.api.banUser({ headers, body: { userId, banReason: "Vom Admin gesperrt" } }), "Sperren fehlgeschlagen.");
     else if (args.action === "unban") await authCall(() => auth.api.unbanUser({ headers, body: { userId } }), "Freigeben fehlgeschlagen.");
     else if (args.action === "remove") {

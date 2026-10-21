@@ -8,6 +8,7 @@ import type { DataModel } from "./_generated/dataModel";
 import { query } from "./_generated/server";
 import authSchema from "./betterAuth/schema";
 import authConfig from "./auth.config";
+import { qrLogin } from "./qrLogin";
 
 export const authComponent = createClient<DataModel, typeof authSchema>(components.betterAuth, { local: { schema: authSchema } });
 // Preview deployments have no fixed SITE_URL; their origin is matched against SITE_ALLOWED_HOSTS per request.
@@ -28,7 +29,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => ({
   } },
   user: { changeEmail: { enabled: false } },
   disabledPaths: ["/sign-up/email", "/sign-in/email", "/request-password-reset", "/reset-password", "/update-user", "/change-email", "/delete-user"],
-  plugins: [admin(), username({ minUsernameLength: 3, maxUsernameLength: 30, usernameValidator: (value: string) => /^[a-z0-9_.-]{3,30}$/i.test(value) }), convex({ authConfig })],
+  plugins: [qrLogin(), admin(), username({ minUsernameLength: 3, maxUsernameLength: 30, usernameValidator: (value: string) => /^[a-z0-9_.-]{3,30}$/i.test(value) }), convex({ authConfig })],
 }) satisfies BetterAuthOptions;
 export const createAuth = (ctx: GenericCtx<DataModel>) => betterAuth(createAuthOptions(ctx));
 export async function requireActor(ctx: GenericCtx<DataModel>, adminOnly = false) {

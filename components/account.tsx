@@ -7,6 +7,7 @@ import { AccordionSection } from "./interior/accordion";
 import { LoadingButton } from "./interior/loading-button";
 import { FloatingLabelInput } from "./interior/floating-label";
 import { PasswordStrength } from "./interior/password-strength";
+import QrLoginCard from "./qr-login-card";
 import ChaxterLogo from "./chaxter-logo";
 import { useEffect, useState, type FormEvent } from "react";
 import { authClient } from "@/lib/auth-client";
@@ -158,6 +159,12 @@ export default function Account({ user }: { user: { username: string; role: stri
           </>
         )}
       </AccordionSection>
+
+      {user.role !== "admin" && (
+        <AccordionSection title="Anmelde-QR-Code" description="Ohne Passwort anmelden, per Kamera" meta="QR">
+          <QrLoginCard username={user.username} />
+        </AccordionSection>
+      )}
 
       <AccordionSection title="Passwort ändern" description="Zugang und andere Anmeldungen absichern" meta="Sicherheit">
         <form onSubmit={password}>

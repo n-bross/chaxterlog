@@ -15,6 +15,7 @@ import type * as devices from "../devices.js";
 import type * as events from "../events.js";
 import type * as exports from "../exports.js";
 import type * as http from "../http.js";
+import type * as qrLogin from "../qrLogin.js";
 import type * as setup from "../setup.js";
 import type * as stats from "../stats.js";
 import type * as support from "../support.js";
@@ -34,6 +35,7 @@ declare const fullApi: ApiFromModules<{
   events: typeof events;
   exports: typeof exports;
   http: typeof http;
+  qrLogin: typeof qrLogin;
   setup: typeof setup;
   stats: typeof stats;
   support: typeof support;
