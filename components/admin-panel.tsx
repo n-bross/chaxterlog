@@ -7,6 +7,7 @@ import { FloatingLabelInput } from "./interior/floating-label";
 import { LoadingButton } from "./interior/loading-button";
 import { Accordion, AccordionSection } from "./interior/accordion";
 import RemoteActivity from "./remote-activity";
+import DeleteEntriesDialog from "./delete-entries-dialog";
 import { dayKey } from "@/lib/tracking";
 import { addDays } from "@/lib/statistics";
 import { Dropdown } from "./interior/dropdown";
@@ -77,6 +78,7 @@ export default function AdminPanel() {
   const [resetUserId, setResetUserId] = useState<string>("");
   const [createUsername, setCreateUsername] = useState("");
   const [resetPassword, setResetPassword] = useState("");
+  const [entriesUser, setEntriesUser] = useState<User | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -315,22 +317,21 @@ export default function AdminPanel() {
                   <td>{user.role === "admin" ? "Admin" : "Mitarbeiter"}</td>
                   <td><span className={`status-pill ${user.banned ? "banned" : "active"}`}>{user.banned ? "Gesperrt" : "Aktiv"}</span></td>
                   <td>
-                    {user.role !== "admin" && (
-                      <button
-                        className="danger-button"
-                        data-action={user.banned ? "unban" : "ban"}
-                        type="button"
-                        disabled={busy}
-                        onClick={() =>
-                          void change({
-                            action: user.banned ? "unban" : "ban",
-                            userId: user.id,
-                          })
-                        }
-                      >
-                        {user.banned ? "Freigeben" : "Sperren"}
-                      </button>
-                    )}
+                    <span className="row-actions">
+                      <button type="button" className="secondary-button" disabled={busy} onClick={() => setEntriesUser(user)}>Einträge löschen</button>
+                      {user.role !== "admin" && (
+                        <button className="danger-button" data-action={user.banned ? "unban" : "ban"} type="button" disabled={busy}
+                          onClick={() => void change({ action: user.banned ? "unban" : "ban", userId: user.id })}>
+                          {user.banned ? "Freigeben" : "Sperren"}
+                        </button>
+                      )}
+                      {user.role !== "admin" && user.banned && (
+                        <button className="danger-button danger-solid" type="button" disabled={busy}
+                          onClick={() => { if (window.confirm(`Zugang „${user.username}“ endgültig löschen?\n\nGezählte Besuche bleiben erhalten und zeigen weiter diesen Namen. Sollen auch sie verschwinden, vorher „Einträge löschen“ verwenden.`)) void change({ action: "remove", userId: user.id }); }}>
+                          Zugang löschen
+                        </button>
+                      )}
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -407,6 +408,7 @@ export default function AdminPanel() {
       </AccordionSection>
 
       <ActivitySection />
+      <DeleteEntriesDialog user={entriesUser} onClose={() => setEntriesUser(null)} onDone={(text) => { setEntriesUser(null); setMessage(text); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
 
       <AccordionSection title="Geräte / Browserinstallationen" description="Gerätenamen und letzte Aktivität im Überblick">
         <p className="muted">

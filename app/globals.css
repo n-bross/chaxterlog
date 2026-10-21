@@ -1634,3 +1634,12 @@ form > .interior-field + :is(.interior-action, .primary-button, .secondary-butto
   .calendar-visits { top: auto; bottom: 3px; right: 4px; font-size: 9.5px; }
   .calendar-event { padding: 1px 3px; font-size: 9px; }
 }
+
+/* ── admin: destructive actions ───────────────────────────── */
+.row-actions { display: inline-flex; flex-wrap: nowrap; justify-content: flex-end; gap: 6px; }
+.danger-solid { background: var(--flag) !important; color: #fff !important; box-shadow: 0 0 0 1px color-mix(in oklab, var(--flag) 80%, black), 0 1px 2px rgba(0, 0, 0, 0.12) !important; }
+@media (hover: hover) and (pointer: fine) { .danger-solid:hover:not(:disabled) { filter: brightness(1.07) !important; } }
+.scope-choice { display: flex; flex-wrap: wrap; gap: 6px; }
+.scope-choice > button { flex: 1 1 0; }
+.danger-note { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--flag-soft); color: var(--ink); font-size: 13px; line-height: 1.5; }
+select { background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%); background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 34px; }
