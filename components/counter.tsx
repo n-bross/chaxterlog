@@ -482,6 +482,13 @@ export default function Counter({ user }: { user: { id: string; username: string
       {/* Quick Event Input Modal */}
       <Modal open={showEventModal} onClose={() => { if (!isSavingEvent) setShowEventModal(false); }} title={editingEventId ? "Event bearbeiten" : "Neues Event eintragen"} maxWidth={480} className="interior-modal" showClose={!isSavingEvent}>
             <form onSubmit={handleSaveEvent} className="modal-form">
+              <Link href="/events" className="manage-events-link" onClick={() => setShowEventModal(false)}>
+                <span>
+                  <strong>Events verwalten</strong>
+                  <small>Alle Events ansehen, bearbeiten, löschen oder importieren</small>
+                </span>
+                <span aria-hidden="true">→</span>
+              </Link>
               {dayEvents.length > 0 && (
                 <div className="event-choice" role="group" aria-label="Events an diesem Tag">
                   {dayEvents.map((item) => (
@@ -513,9 +520,6 @@ export default function Counter({ user }: { user: { id: string; username: string
               {eventSaveError && <p role="alert" className="error-message">{eventSaveError}</p>}
 
               <div className="modal-actions">
-                <Link href="/statistik#events" className="modal-link" onClick={() => setShowEventModal(false)}>
-                  Alle Events &amp; Import →
-                </Link>
                 <div className="modal-buttons">
                   <button
                     type="button"

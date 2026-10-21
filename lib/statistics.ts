@@ -39,17 +39,22 @@ export function periodRange(period: Period, anchor: string, customEnd?: string):
   }
   return { start: `${anchor.slice(0, 4)}-01-01`, end: `${anchor.slice(0, 4)}-12-31` };
 }
-// The period a figure is compared against. A single day is compared with the same weekday a week earlier.
-export function previousRange(period: Period, anchor: string, customEnd?: string): { start: string; end: string; label: string } | null {
+// The period a figure is compared against: the day, week, month or year before. While the chosen
+// period is still running, the previous one is cut to the same number of days, so a half month
+// is never compared with a whole one.
+const dayMonth = (day: string) => `${day.slice(8, 10)}.${day.slice(5, 7)}.`;
+export function previousRange(period: Period, anchor: string, customEnd?: string, today?: string): { start: string; end: string; label: string } | null {
   const range = periodRange(period, anchor, customEnd);
   if (!range || period === "all") return null;
-  if (period === "custom") {
-    const length = (calendarDate(range.end).getTime() - calendarDate(range.start).getTime()) / 86400000;
-    const end = addDays(range.start, -1);
-    return { start: addDays(end, -length), end, label: "vorherigem Zeitraum" };
+  const span = (calendarDate(range.end).getTime() - calendarDate(range.start).getTime()) / 86400000;
+  const previous = period === "custom"
+    ? { start: addDays(range.start, -span - 1), end: addDays(range.start, -1), label: "vorherigem Zeitraum" }
+    : { ...periodRange(period, shiftPeriod(period, anchor, -1))!, label: { day: "Vortag", week: "Vorwoche", month: "Vormonat", year: "Vorjahr" }[period] };
+  if (period !== "day" && today && range.start <= today && today < range.end) {
+    const end = addDays(previous.start, (calendarDate(today).getTime() - calendarDate(range.start).getTime()) / 86400000);
+    if (end < previous.end) return { start: previous.start, end, label: `${dayMonth(previous.start)}–${dayMonth(end)}` };
   }
-  const previous = periodRange(period, period === "day" ? addDays(anchor, -7) : shiftPeriod(period, anchor, -1))!;
-  return { ...previous, label: { day: "gleichem Wochentag der Vorwoche", week: "Vorwoche", month: "Vormonat", year: "Vorjahr" }[period] };
+  return previous;
 }
 export function shiftPeriod(period: Period, anchor: string, direction: number): string {
   if (period === "all" || period === "custom") return anchor;

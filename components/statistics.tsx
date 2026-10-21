@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { listDays, listEvents } from "@/lib/client-data";
 import type { DailyAggregate } from "@/lib/aggregation";
-import EventsManager from "@/components/events-manager";
 import EventAnalytics from "@/components/event-analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dayKey } from "@/lib/tracking";
@@ -107,20 +106,12 @@ function Highlight({ label, value, detail }: { label: string; value: string; det
   );
 }
 
-const between = (hourKey: string) => `zwischen ${hourKey} und ${Number(hourKey) + 1} Uhr`;
 const peak = <T extends { u15: number; o15: number }>(rows: T[], group: "u15" | "o15") =>
   rows.reduce<T | null>((best, row) => (row[group] > (best?.[group] ?? 0) ? row : best), null);
 
-// Opening hours only: the empty night is trimmed, and hour 0 holds backfills without a clock time.
-function openingHours(hours: SeriesPoint[]) {
-  const clocked = hours.slice(1);
-  const used = clocked.map((hour, index) => (hour.total > 0 ? index : -1)).filter((index) => index >= 0);
-  if (!used.length) return [];
-  return clocked.slice(used[0], used[used.length - 1] + 1).map((hour) => ({ ...hour, label: `${hour.key}–${Number(hour.key) + 1} Uhr`, value: hour.total }));
-}
-
 export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
   const [anchor, setAnchor] = useState("");
+  const [today, setToday] = useState("");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [period, setPeriod] = useState<ViewPeriod>("month");
@@ -137,13 +128,13 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
   const [exportTo, setExportTo] = useState("");
 
   useEffect(() => {
-    const today = dayKey(); setAnchor(today); setCustomEnd(today); setCustomStart(addDays(today, -29));
+    const now = dayKey(); setToday(now); setAnchor(now); setCustomEnd(now); setCustomStart(addDays(now, -29));
   }, []);
 
   const activeAnchor = period === "custom" ? (customStart || "2000-01-01") : (anchor || "2000-01-01");
   const activeCustomEnd = period === "custom" ? (customEnd || anchor || "2099-12-31") : undefined;
   const range = useMemo(() => periodRange(period, activeAnchor, activeCustomEnd)!, [period, activeAnchor, activeCustomEnd]);
-  const previous = useMemo(() => previousRange(period, activeAnchor, activeCustomEnd)!, [period, activeAnchor, activeCustomEnd]);
+  const previous = useMemo(() => previousRange(period, activeAnchor, activeCustomEnd, today || undefined)!, [period, activeAnchor, activeCustomEnd, today]);
 
   // One request covers the period, the period it is compared with, and (for a day) its week.
   const load = useCallback(async () => {
@@ -174,7 +165,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
     title: stats.unit === "day" ? longDay(item.key) : stats.unit === "month" ? monthName(item.key) : item.label,
   })), [stats.series, stats.unit]);
 
-  const comparison = before.recordedDays && stats.recordedDays ? stats.average / before.average - 1 : null;
+  const change_ = before.total ? stats.total / before.total - 1 : null;
 
   const unitCaption = { hour: "Tag", day: "Tag", month: "Monat", year: "Jahr" }[stats.unit];
   const currentDisplayTitle = rangeTitle(period, activeAnchor, activeCustomEnd);
@@ -209,7 +200,6 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
     detail: `U15 ${item.u15}, Ü15 ${item.o15}`,
   })), [period, anchor, weekStats.series, stats.series]);
 
-  const hourRows = useMemo(() => openingHours(stats.hours), [stats.hours]);
   const weekdayRows = useMemo(() => stats.weekdays.filter((day) => day.days > 0).map((day) => ({
     ...day,
     u15: day.u15 / day.days,
@@ -217,8 +207,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
     value: day.average,
     detail: `${day.days} ${day.days === 1 ? "Öffnungstag" : "Öffnungstage"}`,
   })), [stats.weekdays]);
-  const peakU15 = peak(hourRows, "u15"), peakO15 = peak(hourRows, "o15");
-  const dayU15 = period === "day" ? null : peak(weekdayRows, "u15"), dayO15 = period === "day" ? null : peak(weekdayRows, "o15");
+  const dayU15 = peak(weekdayRows, "u15"), dayO15 = peak(weekdayRows, "o15");
 
   return (
     <main className="statistics-screen">
@@ -271,31 +260,29 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
       ) : (
         <>
           <section aria-label="Besuche im Zeitraum" className="statistics-totals">
-            <div className="statistics-total">
-              <span>Besuche</span>
-              <strong>{loaded ? number.format(stats.total) : "–"}</strong>
-              <small>{loaded && period !== "day" && stats.recordedDays ? `Ø ${number.format(stats.average)} pro Öffnungstag` : " "}</small>
-            </div>
             <div className="counter-blue">
               <span>U15</span>
               <strong>{loaded ? number.format(stats.counts.u15) : "–"}</strong>
-              <small>{loaded && stats.total ? `${percent.format(share(stats.counts.u15, stats.total))} der Besuche` : " "}</small>
+              <small>{loaded && stats.total ? `${percent.format(share(stats.counts.u15, stats.total))} der Besuche` : "\u00a0"}</small>
             </div>
             <div className="counter-yellow">
               <span>Ü15</span>
               <strong>{loaded ? number.format(stats.counts.o15) : "–"}</strong>
-              <small>{loaded && stats.total ? `${percent.format(share(stats.counts.o15, stats.total))} der Besuche` : " "}</small>
+              <small>{loaded && stats.total ? `${percent.format(share(stats.counts.o15, stats.total))} der Besuche` : "\u00a0"}</small>
+            </div>
+            <div className="statistics-total">
+              <span>Gesamt</span>
+              <strong>{loaded ? number.format(stats.total) : "–"}</strong>
+              <small className="total-change" data-tone={change_ === null ? "none" : change_ > 0.02 ? "up" : change_ < -0.02 ? "down" : "flat"}
+                title={`Verglichen mit ${shortDate(previous.start)}${previous.end !== previous.start ? ` – ${shortDate(previous.end)}` : ""}`}>
+                {!loaded ? "\u00a0" : change_ === null ? `${previous.label}: keine Besuche` : `${change.format(change_)} gegenüber ${previous.label}`}
+              </small>
             </div>
           </section>
 
-          {loaded && (
+          {loaded && (stats.recordedDays > 0 || stats.undated.total > 0) && (
             <p className="statistics-summary">
-              {period !== "day" && <span>{stats.recordedDays} {stats.recordedDays === 1 ? "Öffnungstag" : "Öffnungstage"}</span>}
-              {comparison !== null && (
-                <span className="comparison" data-tone={comparison > 0.02 ? "up" : comparison < -0.02 ? "down" : "flat"}>
-                  {change.format(comparison)} {period === "day" ? "Besuche" : "Besuche pro Tag"} gegenüber {previous.label}
-                </span>
-              )}
+              {period !== "day" && <span>{stats.recordedDays} {stats.recordedDays === 1 ? "Öffnungstag" : "Öffnungstage"} · Ø {number.format(stats.average)} Besuche pro Tag</span>}
               {stats.undated.total > 0 && <span>{stats.undated.total} nachgetragen, ohne Uhrzeit</span>}
             </p>
           )}
@@ -333,39 +320,28 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
                 </section>
               )}
 
-              <FoldedSection title="Uhrzeit & Wochentag" description="Wann kommt welches Alter?">
-                <section className="age-section" aria-label="Wann kommt welches Alter">
-                  <div className="analytics-panel-heading">
-                    <p>
-                      {peakU15 && <>Die meisten U15 kommen {between(peakU15.key)}{dayU15 && <>, am häufigsten {dayU15.label.toLowerCase()}s</>}. </>}
-                      {peakO15 && <>Die meisten Ü15 kommen {between(peakO15.key)}{dayO15 && <>, am häufigsten {dayO15.label.toLowerCase()}s</>}.</>}
-                    </p>
-                    <SegmentedControl className="age-mode-switch" label="Darstellung" value={ageMode} onValueChange={(value) => setAgeMode(value as "count" | "share")}
-                      options={[{ value: "count", label: "Anzahl" }, { value: "share", label: "Anteil" }]} />
-                  </div>
-                  <div className="analytics-chart-grid">
-                    <div>
-                      <h4 className="chart-title">Uhrzeit · {ageMode === "count" ? "Besuche" : "Anteil U15"}</h4>
-                      {hourRows.length ? <Bars mode={ageMode} label="Besuche nach Uhrzeit" rows={hourRows} /> : <p className="analytics-note">Nur nachgetragene Besuche ohne Uhrzeit.</p>}
+              {period !== "day" && (
+                <FoldedSection title="Wochentage" description="An welchem Tag kommt welches Alter?">
+                  <section className="age-section" aria-label="Besuche nach Wochentag">
+                    <div className="analytics-panel-heading">
+                      <p>
+                        {dayU15 && <>U15 kommen am häufigsten {dayU15.label.toLowerCase()}s. </>}
+                        {dayO15 && <>Ü15 kommen am häufigsten {dayO15.label.toLowerCase()}s.</>}
+                      </p>
+                      <SegmentedControl className="age-mode-switch" label="Darstellung" value={ageMode} onValueChange={(value) => setAgeMode(value as "count" | "share")}
+                        options={[{ value: "count", label: "Anzahl" }, { value: "share", label: "Anteil" }]} />
                     </div>
-                    {period !== "day" && (
-                      <div>
-                        <h4 className="chart-title">Wochentag · {ageMode === "count" ? "Ø Besuche pro Öffnungstag" : "Anteil U15"}</h4>
-                        <Bars mode={ageMode} label="Besuche nach Wochentag" rows={weekdayRows} />
-                      </div>
-                    )}
-                  </div>
-                  <Legend />
-                </section>
-              </FoldedSection>
+                    <h4 className="chart-title">{ageMode === "count" ? "Ø Besuche pro Öffnungstag" : "Anteil U15"}</h4>
+                    <Bars mode={ageMode} label="Besuche nach Wochentag" rows={weekdayRows} />
+                    <Legend />
+                  </section>
+                </FoldedSection>
+              )}
             </>
           )}
 
           <FoldedSection title="Event-Auswertung" description="Bringen Events mehr Besucher als ein normaler Tag?">
             <EventAnalytics onSelectDay={(d) => { setPeriod("day"); setAnchor(d); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
-          </FoldedSection>
-          <FoldedSection id="events" title="Events verwalten" description="Events eintragen, bearbeiten oder importieren">
-            <EventsManager highlightDate={anchor} onEventsChange={(items) => setEvents(items.filter((e) => e.date >= range.start && e.date <= range.end))} />
           </FoldedSection>
         </>
       )}

@@ -89,12 +89,21 @@ test("custom period filters accurately and builds daily or monthly series", () =
 });
 
 test("each period is compared with the one before it", () => {
-  assert.deepEqual(previousRange("day", "2026-10-21"), { start: "2026-10-14", end: "2026-10-14", label: "gleichem Wochentag der Vorwoche" });
+  assert.deepEqual(previousRange("day", "2026-10-21"), { start: "2026-10-20", end: "2026-10-20", label: "Vortag" });
   assert.deepEqual(previousRange("week", "2026-10-21"), { start: "2026-10-12", end: "2026-10-18", label: "Vorwoche" });
   assert.deepEqual(previousRange("month", "2026-03-31"), { start: "2026-02-01", end: "2026-02-28", label: "Vormonat" });
   assert.deepEqual(previousRange("year", "2026-10-21"), { start: "2025-01-01", end: "2025-12-31", label: "Vorjahr" });
   assert.deepEqual(previousRange("custom", "2026-10-11", "2026-10-20"), { start: "2026-10-01", end: "2026-10-10", label: "vorherigem Zeitraum" });
   assert.equal(previousRange("all", "2026-10-21"), null);
+});
+
+test("a running period is compared with the same number of days before it", () => {
+  // Wednesday 21.10.: Monday–Wednesday against Monday–Wednesday of the week before.
+  assert.deepEqual(previousRange("week", "2026-10-21", undefined, "2026-10-21"), { start: "2026-10-12", end: "2026-10-14", label: "12.10.–14.10." });
+  assert.deepEqual(previousRange("month", "2026-10-21", undefined, "2026-10-21"), { start: "2026-09-01", end: "2026-09-21", label: "01.09.–21.09." });
+  // A finished period and a single day keep their full comparison.
+  assert.equal(previousRange("month", "2026-09-10", undefined, "2026-10-21")!.label, "Vormonat");
+  assert.equal(previousRange("day", "2026-10-21", undefined, "2026-10-21")!.label, "Vortag");
 });
 
 test("backfilled visits in hour 0 count in totals but are reported as undated", () => {

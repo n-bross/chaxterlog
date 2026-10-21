@@ -24,7 +24,7 @@ export default function EventPerformance({ events, days, onSelectDay }: {
   const { eventDays, compared, averageUplift, best } = useMemo(() => analyzeEventDays(events, days), [events, days]);
 
   if (events.length === 0) {
-    return <p className="events-empty">Noch keine Events eingetragen. Sobald unter „Events verwalten“ Events angelegt oder importiert sind, zeigt sich hier, ob sie mehr Besucher gebracht haben.</p>;
+    return <p className="events-empty">Noch keine Events eingetragen. Events trägt man auf der Zählseite über den Kalender-Knopf ein (dort auch „Events verwalten“). Sobald welche angelegt sind, zeigt sich hier, ob sie mehr Besucher gebracht haben.</p>;
   }
   const past = eventDays.filter((day) => day.total > 0);
 
