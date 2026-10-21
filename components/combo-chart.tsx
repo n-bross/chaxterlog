@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-export type ComboPoint = { key: string; label: string; title: string; u15: number; o15: number; total: number };
+export type ComboPoint = { key: string; label: string; title: string; u15: number; o15: number; total: number; future?: boolean };
 
 const number = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
 const PAD = { top: 12, right: 8, bottom: 26, left: 44 };
@@ -37,7 +37,8 @@ export default function ComboChart({ points, label }: { points: ComboPoint[]; la
   const y = (v: number) => PAD.top + plotH - (v / top) * plotH;
   const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
   const labelEvery = Math.max(1, Math.ceil(44 / Math.max(band, 1)));
-  const line = (group: "u15" | "o15") => points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[group]).toFixed(1)}`).join("");
+  // Lines stop at today: days that have not happened yet are not zero visits.
+  const line = (group: "u15" | "o15") => points.filter((p) => !p.future).map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p[group]).toFixed(1)}`).join("");
   // Dots only where something was counted; closed days stay a quiet baseline.
   const marked = points.map((p, i) => i).filter((i) => band >= 14 && points[i].total > 0);
   const signature = useMemo(() => points.map((p) => `${p.key}:${p.total}`).join("|"), [points]);

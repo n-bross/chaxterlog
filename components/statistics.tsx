@@ -163,7 +163,8 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
   const chartPoints = useMemo(() => stats.series.map((item) => ({
     ...item,
     title: stats.unit === "day" ? longDay(item.key) : stats.unit === "month" ? monthName(item.key) : item.label,
-  })), [stats.series, stats.unit]);
+    future: Boolean(today) && item.key > today.slice(0, item.key.length),
+  })), [stats.series, stats.unit, today]);
 
   const change_ = before.total ? stats.total / before.total - 1 : null;
 

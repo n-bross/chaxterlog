@@ -2,7 +2,9 @@
 import { errorMessage } from "@/lib/errors";
 import { convex } from "@/lib/convex-client";
 import { api } from "@/convex/_generated/api";
-import { listEvents } from "@/lib/client-data";
+import { listDays, listEvents } from "@/lib/client-data";
+import { dayKey } from "@/lib/tracking";
+import { SegmentedControl } from "./interior/segmented-control";
 import { Modal } from "./interior/modal";
 import { FloatingLabelInput } from "./interior/floating-label";
 import { LoadingButton } from "./interior/loading-button";
@@ -18,6 +20,9 @@ interface EventsManagerProps {
 
 export default function EventsManager({ onEventsChange, highlightDate }: EventsManagerProps) {
   const [events, setEvents] = useState<ChaxterEvent[]>([]);
+  const [view, setView] = useState<"upcoming" | "history">("upcoming");
+  const [month, setMonth] = useState(() => dayKey().slice(0, 7));
+  const [monthVisits, setMonthVisits] = useState<Map<string, number> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,6 +62,17 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
+
+  // The history calendar shows each day's visitors next to its events; loaded per month on demand.
+  useEffect(() => {
+    if (view !== "history") return;
+    let active = true;
+    setMonthVisits(null);
+    listDays(`${month}-01`, `${month}-31`)
+      .then((days) => { if (active) setMonthVisits(new Map(days.map((d) => [d.date, d.u15 + d.o15]))); })
+      .catch(() => { if (active) setMonthVisits(new Map()); });
+    return () => { active = false; };
+  }, [view, month]);
 
   // Update preview when importText changes
   useEffect(() => {
@@ -176,7 +192,47 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
     }
   };
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = dayKey();
+  const upcoming = events.filter((item) => item.date >= todayStr).sort((x, y) => x.date.localeCompare(y.date));
+  const past = events.filter((item) => item.date < todayStr);
+  const monthEvents = past.filter((item) => item.date.startsWith(month)).sort((x, y) => x.date.localeCompare(y.date));
+  const shiftMonth = (delta: number) => {
+    const date = new Date(`${month}-15T12:00:00Z`);
+    date.setUTCMonth(date.getUTCMonth() + delta);
+    setMonth(date.toISOString().slice(0, 7));
+  };
+  const monthTitle = new Date(`${month}-15T12:00:00Z`).toLocaleDateString("de-DE", { timeZone: "UTC", month: "long", year: "numeric" });
+  const calendarCells = (() => {
+    const first = new Date(`${month}-01T12:00:00Z`);
+    const lead = (first.getUTCDay() + 6) % 7;
+    const length = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+    return [...Array(lead).fill(null), ...Array.from({ length }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`)];
+  })();
+
+  const renderRow = (item: ChaxterEvent) => {
+    const isToday = item.date === todayStr;
+    const isHighlighted = highlightDate && item.date === highlightDate;
+    return (
+      <div key={item.id} className={`event-item-row ${isToday ? "event-today" : ""} ${isHighlighted ? "event-highlighted" : ""}`}>
+        <div className="event-date-col">
+          <span className="event-date-text">{formatDateDisplay(item.date)}</span>
+          {isToday && <span className="event-badge-today">Heute</span>}
+        </div>
+        <div className="event-content-col is-clickable" onClick={() => handleStartEdit(item)} title="Klicken zum Bearbeiten">
+          <strong className="event-title">{item.title}</strong>
+          {item.description && <span className="event-desc">{item.description}</span>}
+        </div>
+        <div className="event-action-col">
+          <button type="button" className="event-edit-btn" title="Event bearbeiten" aria-label={`Event "${item.title}" bearbeiten`} onClick={() => handleStartEdit(item)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /><path d="m15 5 4 4" /></svg>
+          </button>
+          <button type="button" className="event-delete-btn" title="Event löschen" aria-label={`Event "${item.title}" löschen`} onClick={() => handleDelete(item.id, item.title)}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <section className="events-manager-section analytics-panel" aria-label="Veranstaltungen und Events">
@@ -210,76 +266,50 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
 
       {error && <p role="alert" className="error-message">{error}</p>}
 
-      {/* Events List */}
-      <div className="events-list">
-        {loading ? (
-          <p className="analytics-note">Events werden geladen …</p>
-        ) : events.length === 0 ? (
-          <p className="events-empty">
-            Noch keine Events eingetragen. Klicke auf <strong>+ Event</strong> oder <strong>Import</strong>, um Kalender- oder Excel-Listen zu laden.
-          </p>
+      <SegmentedControl className="events-view-switch" label="Ansicht" value={view} onValueChange={(value) => setView(value as "upcoming" | "history")}
+        options={[{ value: "upcoming", label: `Kommend (${upcoming.length})` }, { value: "history", label: `Verlauf (${past.length})` }]} />
+
+      {loading ? (
+        <p className="analytics-note">Events werden geladen …</p>
+      ) : view === "upcoming" ? (
+        upcoming.length === 0 ? (
+          <p className="events-empty">Keine kommenden Events. Mit <strong>+ Event</strong> oder <strong>Import</strong> lassen sich neue eintragen; vergangene stehen unter „Verlauf“.</p>
         ) : (
-          <div className="events-table-wrapper">
-            <div className="events-scroll-list">
-              {events.map((item) => {
-                const isToday = item.date === todayStr;
-                const isHighlighted = highlightDate && item.date === highlightDate;
-                return (
-                  <div
-                    key={item.id}
-                    className={`event-item-row ${isToday ? "event-today" : ""} ${isHighlighted ? "event-highlighted" : ""}`}
-                  >
-                    <div className="event-date-col">
-                      <span className="event-date-text">{formatDateDisplay(item.date)}</span>
-                      {isToday && <span className="event-badge-today">Heute</span>}
-                    </div>
-                    <div
-                      className="event-content-col is-clickable"
-                      onClick={() => handleStartEdit(item)}
-                      title="Klicken zum Bearbeiten des Namens"
-                    >
-                      <strong className="event-title">{item.title}</strong>
-                      {item.description && <span className="event-desc">{item.description}</span>}
-                    </div>
-                    <div className="event-action-col">
-                      <button
-                        type="button"
-                        className="event-edit-btn"
-                        title="Event bearbeiten"
-                        aria-label={`Event "${item.title}" bearbeiten`}
-                        onClick={() => handleStartEdit(item)}
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          aria-hidden="true"
-                        >
-                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                          <path d="m15 5 4 4" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        className="event-delete-btn"
-                        title="Event löschen"
-                        aria-label={`Event "${item.title}" löschen`}
-                        onClick={() => handleDelete(item.id, item.title)}
-                      >
-                        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="events-table-wrapper"><div className="events-scroll-list">{upcoming.map(renderRow)}</div></div>
+        )
+      ) : (
+        <div className="event-history">
+          <div className="calendar-nav">
+            <button type="button" className="period-arrow" aria-label="Vorheriger Monat" onClick={() => shiftMonth(-1)}>←</button>
+            <h4 aria-live="polite">{monthTitle}</h4>
+            <button type="button" className="period-arrow" aria-label="Nächster Monat" disabled={month >= todayStr.slice(0, 7)} onClick={() => shiftMonth(1)}>→</button>
           </div>
-        )}
-      </div>
+          <div className="calendar-grid" role="grid" aria-label={`Kalender ${monthTitle}`}>
+            {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((label) => <span key={label} className="calendar-weekday" role="columnheader">{label}</span>)}
+            {calendarCells.map((date, index) => {
+              if (!date) return <span key={`lead-${index}`} className="calendar-cell is-empty" aria-hidden="true" />;
+              const dayEvents = past.filter((item) => item.date === date);
+              const visits = monthVisits?.get(date) ?? 0;
+              return (
+                <div key={date} role="gridcell" className={`calendar-cell ${dayEvents.length ? "has-event" : ""} ${date === todayStr ? "is-today" : ""} ${date > todayStr ? "is-future" : ""}`}
+                  aria-label={`${formatDateDisplay(date)}: ${visits} Besuche${dayEvents.length ? `, ${dayEvents.map((item) => item.title).join(", ")}` : ""}`}>
+                  <span className="calendar-day">{Number(date.slice(8))}</span>
+                  {visits > 0 && <span className="calendar-visits">{visits}</span>}
+                  {dayEvents.map((item) => (
+                    <button key={item.id} type="button" className="calendar-event" title={item.title} onClick={() => handleStartEdit(item)}>{item.title}</button>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+          <p className="calendar-legend"><span className="calendar-visits">42</span> Besuche an diesem Tag · <span className="calendar-legend-event" /> Event</p>
+          {monthEvents.length > 0 ? (
+            <div className="events-table-wrapper"><div className="events-scroll-list">{monthEvents.map(renderRow)}</div></div>
+          ) : (
+            <p className="events-empty">Keine Events im {monthTitle}.</p>
+          )}
+        </div>
+      )}
 
       {/* Edit Event Modal */}
       <Modal open={!!editingEvent} onClose={() => { if (!isSubmitting) setEditingEvent(null); }} title="Event bearbeiten" maxWidth={480} className="interior-modal" showClose={!isSubmitting}>
