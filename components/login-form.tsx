@@ -1,4 +1,5 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
 import { useState, type FormEvent } from "react";
 import { convex } from "@/lib/convex-client";
 import { api } from "@/convex/_generated/api";
@@ -33,11 +34,15 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
         throw new Error(
           setup
             ? "Admin ist eingerichtet. Bitte über /login anmelden."
-            : "Anmeldung fehlgeschlagen. Zugangsdaten prüfen oder später erneut versuchen."
+            : result.error.status === 429
+              ? "Zu viele Anmeldeversuche. Bitte eine Minute warten und dann erneut anmelden."
+              : result.error.status === 403 && /BANNED/i.test(`${result.error.code ?? ""} ${result.error.message ?? ""}`)
+                ? "Dieser Zugang ist gesperrt. Bitte an die Leitung wenden."
+                : "Benutzername oder Passwort stimmt nicht."
         );
       window.location.assign(setup ? "/admin" : "/");
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Verbindung fehlgeschlagen.");
+      setError(errorMessage(error, "Verbindung fehlgeschlagen."));
     } finally {
       setBusy(false);
     }

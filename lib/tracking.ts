@@ -28,6 +28,24 @@ export function dayKey(date: Date = new Date()): string {
   return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
+const timeFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+});
+const berlinTime = (date: Date) => timeFormatter.format(date);
+
+// The same Berlin wall-clock time on another café day: clicks entered for a past day keep a realistic hour.
+export function atBerlinTime(day: string, reference: Date = new Date()): Date {
+  const [year, month, date] = day.split("-").map(Number);
+  const [hour, minute, second] = berlinTime(reference).split(":").map(Number);
+  const wall = Date.UTC(year, month - 1, date, hour, minute, second, reference.getUTCMilliseconds());
+  for (const offsetHours of [1, 2]) {
+    const candidate = new Date(wall - offsetHours * 3_600_000);
+    if (dayKey(candidate) === day && berlinTime(candidate) === berlinTime(reference)) return candidate;
+  }
+  // The hour skipped by the spring clock change does not exist; use midday instead.
+  return new Date(Date.UTC(year, month - 1, date, 11));
+}
+
 export function isTrackEvent(value: unknown): value is TrackEvent {
   if (!value || typeof value !== "object") return false;
   const event = value as Record<string, unknown>;

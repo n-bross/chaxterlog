@@ -102,6 +102,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
   const [days, setDays] = useState<DailyAggregate[]>([]);
   const [eventsList, setEventsList] = useState<ChaxterEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [error, setError] = useState(false);
 
   // Download export state
@@ -123,7 +124,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
     try {
       const week = period === "day" ? periodRange("week", activeAnchor) : range;
       const result = await listDays(week?.start, week?.end);
-      if (id === requestId.current) { setDays(result); setError(false); setLoaded(true); }
+      if (id === requestId.current) { setDays(result); setError(false); setLoaded(true); setLoadedAt(new Date()); }
     } catch { if (id === requestId.current) setError(true); }
   }, [range, period, activeAnchor]);
   useEffect(() => { if (anchor) void load(); }, [load, anchor]);
@@ -220,7 +221,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
           <div className="account-brand">
             <ChaxterLogo />
           </div>
-          <span className="analytics-basis">{loaded ? "Stand beim Laden" : "Lädt …"}</span>
+          <span className="analytics-basis" title="Zeitpunkt, zu dem die Werte geladen wurden">{loaded && loadedAt ? `Stand ${loadedAt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}` : "Lädt …"}</span>
         </div>
       </header>
 
@@ -235,8 +236,12 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
               <input
                 type="date"
                 value={customStart}
+                max={customEnd || undefined}
                 onChange={(event) => {
-                  if (event.target.value) setCustomStart(event.target.value);
+                  const value = event.target.value;
+                  if (!value) return;
+                  setCustomStart(value);
+                  if (customEnd && value > customEnd) setCustomEnd(value);
                 }}
                 className="date-input"
               />
@@ -246,8 +251,12 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
               <input
                 type="date"
                 value={customEnd}
+                min={customStart || undefined}
                 onChange={(event) => {
-                  if (event.target.value) setCustomEnd(event.target.value);
+                  const value = event.target.value;
+                  if (!value) return;
+                  setCustomEnd(value);
+                  if (customStart && value < customStart) setCustomStart(value);
                 }}
                 className="date-input"
               />
@@ -312,7 +321,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
 
           <p className="analytics-basis">
             {loaded
-              ? `${stats.recordedDays} erfasste Tage · Ø ${number.format(stats.average)} Besuche pro erfasstem Tag`
+              ? `${stats.recordedDays} ${stats.recordedDays === 1 ? "erfasster Tag" : "erfasste Tage"} · Ø ${number.format(stats.average)} Besuche pro erfasstem Tag`
               : "Daten werden geladen …"}
           </p>
 
@@ -424,7 +433,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
                           exportSingleChartGraphic(
                             "Wochentagsvergleich (Durchschnitt)",
                             currentDisplayTitle,
-                            stats.weekdays.map((w) => ({ label: w.label, value: w.average, detail: `${w.days} erfasste Tage` })),
+                            stats.weekdays.map((w) => ({ label: w.label, value: w.average, detail: `${w.days} ${w.days === 1 ? "erfasster Tag" : "erfasste Tage"}` })),
                             `wochentage-${range?.start ?? "zeitraum"}.png`,
                             false
                           )
@@ -439,7 +448,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
                       rows={stats.weekdays.map((item) => ({
                         ...item,
                         value: item.average,
-                        detail: `${item.days} erfasste Tage, ${item.total} Besuche`,
+                        detail: `${item.days} ${item.days === 1 ? "erfasster Tag" : "erfasste Tage"}, ${item.total} ${item.total === 1 ? "Besuch" : "Besuche"}`,
                       }))}
                     />
                   </section>
@@ -510,7 +519,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
         open={exportOpen}
         onClose={() => setExportOpen(false)}
         title="Daten & Grafiken herunterladen"
-        description="CSV-, JSON- und Bild-Exporte der Auswertungen und Besuchsdaten."
+        description={isAdmin ? "CSV-, JSON- und Bild-Exporte der Auswertungen und Besuchsdaten." : "Bild-Exporte der Auswertungen. Rohdaten (CSV/JSON) kann nur der Admin herunterladen."}
         maxWidth={500}
       >
         <div className="download-modal-body">

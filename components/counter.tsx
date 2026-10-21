@@ -1,4 +1,5 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
 import { useConvexAuth, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { convex } from "@/lib/convex-client";
@@ -12,7 +13,7 @@ import Link from "next/link";
 import Image from "next/image";
 import chaxterLogo from "@/public/chaxter-logo.png";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dayKey, readDay, readEvents, undoLastClick, STORAGE_PREFIX, type AgeGroup, type Counts, type TrackEvent } from "@/lib/tracking";
+import { atBerlinTime, dayKey, readDay, readEvents, undoLastClick, STORAGE_PREFIX, type AgeGroup, type Counts, type TrackEvent } from "@/lib/tracking";
 
 import { latestRedo, redoLastClick } from "@/lib/corrections";
 import type { Correction } from "@/lib/correction-types";
@@ -22,6 +23,8 @@ import { useVisitSync } from "@/lib/use-visit-sync";
 import { createId, getDevice } from "@/lib/device";
 import SyncStatus from "@/components/sync-status";
 import type { ChaxterEvent } from "@/lib/events";
+
+const BACKFILL_IDLE_MS = 5 * 60_000;
 
 type IconName = "undo" | "redo" | "stats" | "calendar" | "user";
 function Icon({ name, className = "" }: { name: IconName; className?: string }) {
@@ -55,7 +58,8 @@ export default function Counter({ user }: { user: { id: string; username: string
   const pointerStartPosRef = useRef<Record<AgeGroup, { x: number; y: number } | null>>({ u15: null, o15: null });
 
   // Event & Duplicate tracking states
-  const [currentDayEvent, setCurrentDayEvent] = useState<ChaxterEvent | null>(null);
+  const [dayEvents, setDayEvents] = useState<ChaxterEvent[]>([]);
+  const currentDayEvent = dayEvents[0] ?? null;
   const [duplicateWarning, setDuplicateWarning] = useState<{
     group: AgeGroup;
     diffSeconds: number;
@@ -67,6 +71,7 @@ export default function Counter({ user }: { user: { id: string; username: string
   // Quick event input modal state
   const [showEventModal, setShowEventModal] = useState(false);
   const [eventDate, setEventDate] = useState("");
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [eventTitle, setEventTitle] = useState("");
   const [eventDesc, setEventDesc] = useState("");
   const [isSavingEvent, setIsSavingEvent] = useState(false);
@@ -133,8 +138,8 @@ export default function Counter({ user }: { user: { id: string; username: string
   const loadDayEvent = useCallback((day: string) => {
     if (!day) return;
     convex.query(api.events.list, { from: day, to: day, paginationOpts: { cursor: null, numItems: 100 } })
-      .then((data) => setCurrentDayEvent(data.page[0] ?? null))
-      .catch(() => setCurrentDayEvent(null));
+      .then((data) => setDayEvents(data.page))
+      .catch(() => setDayEvents([]));
   }, []);
 
   useEffect(() => {
@@ -147,13 +152,13 @@ export default function Counter({ user }: { user: { id: string; username: string
     setIsSavingEvent(true);
     setEventSaveError(null);
     try {
-      await convex.mutation(api.events.save, { events: [{ ...(currentDayEvent?.date === eventDate ? { id: currentDayEvent.id } : {}), date: eventDate, title: eventTitle.trim(), description: eventDesc.trim() || undefined }] });
+      await convex.mutation(api.events.save, { events: [{ ...(editingEventId ? { id: editingEventId } : {}), date: eventDate, title: eventTitle.trim(), description: eventDesc.trim() || undefined }] });
       setShowEventModal(false);
       setEventTitle("");
       setEventDesc("");
       loadDayEvent(selectedDay);
     } catch (err: unknown) {
-      setEventSaveError(err instanceof Error ? err.message : "Fehler beim Speichern");
+      setEventSaveError(errorMessage(err, "Fehler beim Speichern"));
     } finally {
       setIsSavingEvent(false);
     }
@@ -180,8 +185,21 @@ export default function Counter({ user }: { user: { id: string; username: string
     };
   }, [refresh]);
 
+  const shortDay = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" });
+
+  // A past day stays selected for entering missed visits; after a pause the view returns to today
+  // so the next shift does not count on the wrong day by accident.
+  const backfillTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const armBackfillTimer = useCallback(() => {
+    if (backfillTimer.current) clearTimeout(backfillTimer.current);
+    backfillTimer.current = selectedDayRef.current ? setTimeout(() => { selectedDayRef.current = null; refresh(); }, BACKFILL_IDLE_MS) : null;
+  }, [refresh]);
+  useEffect(() => () => { if (backfillTimer.current) clearTimeout(backfillTimer.current); }, []);
+  const activeDay = () => selectedDayRef.current ?? dayKey();
+
   function track(group: AgeGroup) {
-    const date = new Date();
+    const backfillDay = selectedDayRef.current && selectedDayRef.current < dayKey() ? selectedDayRef.current : null;
+    const date = backfillDay ? atBerlinTime(backfillDay) : new Date();
     const device = getDevice();
     const event: TrackEvent = {
       id: createId(), group, timestamp: date.toISOString(),
@@ -194,10 +212,12 @@ export default function Counter({ user }: { user: { id: string; username: string
       setStorageError("Nicht gespeichert. Bitte Browserspeicher freigeben.");
       return;
     }
-    selectedDayRef.current = null;
+    if (!backfillDay) selectedDayRef.current = null;
+    armBackfillTimer();
     setDismissedDuplicate(false);
     refresh();
-    setFeedback(`${group === "u15" ? "U15" : "Ü15"}: Besuch gespeichert. ${displayCounts(localStorage, dayKey())[group]} heute.`);
+    const day = backfillDay ?? dayKey();
+    setFeedback(`${group === "u15" ? "U15" : "Ü15"}: Besuch ${backfillDay ? `für ${shortDay(backfillDay)} nachgetragen` : "gespeichert"}. ${displayCounts(localStorage, day)[group]} ${backfillDay ? "an diesem Tag" : "heute"}.`);
     clearTimeout(timers.current[group]);
     setFlash((value) => ({ ...value, [group]: true }));
     timers.current[group] = setTimeout(() => setFlash((value) => ({ ...value, [group]: false })), 150);
@@ -210,10 +230,11 @@ export default function Counter({ user }: { user: { id: string; username: string
   }
 
   function undoGroup(group: AgeGroup) {
-    if (selectedDayRef.current && selectedDayRef.current !== dayKey()) return;
+    const day = activeDay();
+    armBackfillTimer();
     let event: TrackEvent | null;
     try {
-      event = undoLastClick(localStorage, dayKey(), correction("undo"), group);
+      event = undoLastClick(localStorage, day, correction("undo"), group);
     } catch {
       setStorageError("Rückgängig nicht möglich. Zählung unverändert.");
       return;
@@ -221,11 +242,11 @@ export default function Counter({ user }: { user: { id: string; username: string
     refresh();
     const groupLabel = group === "u15" ? "U15" : "Ü15";
     if (!event) {
-      setFeedback(`${groupLabel}: Keine Besuche heute zum Abziehen.`);
+      setFeedback(`${groupLabel}: Keine Besuche ${selectedDayRef.current ? "an diesem Tag" : "heute"} zum Abziehen.`);
       try { navigator.vibrate?.([30, 40, 30]); } catch { /* Ignore */ }
       return;
     }
-    const currentCounts = displayCounts(localStorage, dayKey());
+    const currentCounts = displayCounts(localStorage, day);
     setFeedback(`${groupLabel}: 1 abgezogen (Besuch zurückgenommen). Stand: ${currentCounts[group]}.`);
     setDecrementFlash((value) => ({ ...value, [group]: true }));
     setTimeout(() => setDecrementFlash((value) => ({ ...value, [group]: false })), 350);
@@ -234,23 +255,23 @@ export default function Counter({ user }: { user: { id: string; username: string
   }
 
   function undo() {
-    if (selectedDayRef.current && selectedDayRef.current !== dayKey()) return;
+    armBackfillTimer();
     let event: TrackEvent | null;
-    try { event = undoLastClick(localStorage, dayKey(), correction("undo")); }
+    try { event = undoLastClick(localStorage, activeDay(), correction("undo")); }
     catch {
       setStorageError("Rückgängig nicht möglich. Zählung unverändert.");
       return;
     }
     refresh();
     if (!event) return;
-    setFeedback(`${event.group === "u15" ? "U15" : "Ü15"}: Besuch rückgängig gemacht. ${event.id}`);
+    setFeedback(`${event.group === "u15" ? "U15" : "Ü15"}: Besuch rückgängig gemacht.`);
     window.dispatchEvent(new Event(LOCAL_CHANGE));
   }
 
   function redo() {
-    if (selectedDayRef.current && selectedDayRef.current !== dayKey()) return;
+    armBackfillTimer();
     try {
-      const restored = redoLastClick(localStorage, correction("redo"));
+      const restored = redoLastClick(localStorage, correction("redo"), activeDay());
       if (!restored) return;
       refresh();
       setFeedback(`${restored.group === "u15" ? "U15" : "Ü15"}: Besuch wiederhergestellt.`);
@@ -261,7 +282,6 @@ export default function Counter({ user }: { user: { id: string; username: string
   function handlePointerDown(group: AgeGroup, e: React.PointerEvent<HTMLButtonElement>) {
     if (e.button !== 0) return;
     if (!ready) return;
-    if (selectedDayRef.current && selectedDayRef.current !== dayKey()) return;
 
     pointerStartPosRef.current[group] = { x: e.clientX, y: e.clientY };
     isLongPressRef.current[group] = false;
@@ -339,7 +359,7 @@ export default function Counter({ user }: { user: { id: string; username: string
         {/* Center: Total count */}
         <div className="count-header-center">
           <div className="day-total-wrap">
-            <output className="day-total" aria-label={`Gesamtzahl am ${selectedDay}: ${counts.u15 + counts.o15}`} aria-live="polite">
+            <output className="day-total" aria-label={ready && selectedDay ? `Gesamtzahl am ${selectedDay}: ${counts.u15 + counts.o15}` : "Gesamtzahl wird geladen"} aria-live="polite">
               {ready ? counts.u15 + counts.o15 : "–"}
             </output>
             <span className="day-total-sublabel">Gesamt</span>
@@ -352,6 +372,7 @@ export default function Counter({ user }: { user: { id: string; username: string
             type="button"
             onClick={() => {
               setEventDate(selectedDay || dayKey());
+              setEditingEventId(currentDayEvent?.id ?? null);
               setEventTitle(currentDayEvent ? currentDayEvent.title : "");
               setEventDesc(currentDayEvent?.description || "");
               setEventSaveError(null);
@@ -359,7 +380,7 @@ export default function Counter({ user }: { user: { id: string; username: string
             }}
             className={`header-event-trigger ${currentDayEvent ? "has-event" : ""}`}
             aria-label="Event eintragen oder ansehen"
-            title={currentDayEvent ? `Event: ${currentDayEvent.title}` : "Event für diesen Tag eintragen"}
+            title={dayEvents.length ? `${dayEvents.length === 1 ? "Event" : "Events"}: ${dayEvents.map((item) => item.title).join(", ")}` : "Event für diesen Tag eintragen"}
           >
             <Icon name="calendar" className="event-calendar-icon" />
             <span className="event-trigger-label">Event</span>
@@ -382,7 +403,8 @@ export default function Counter({ user }: { user: { id: string; username: string
                 max={now ? dayKey(now) : undefined}
                 onChange={(event) => {
                   const value = event.target.value;
-                  selectedDayRef.current = value && value !== dayKey() ? value : null;
+                  selectedDayRef.current = value && value < dayKey() ? value : null;
+                  armBackfillTimer();
                   refresh();
                 }}
               />
@@ -391,6 +413,13 @@ export default function Counter({ user }: { user: { id: string; username: string
           </div>
         </div>
       </header>
+
+      {ready && selectedDay && now && selectedDay < dayKey(now) && (
+        <div className="backfill-notice" role="status">
+          <span><strong>Nachtrag für {shortDay(selectedDay)}:</strong> Klicks, Undo und Redo gelten für diesen Tag.</span>
+          <button type="button" className="backfill-today" onClick={() => { selectedDayRef.current = null; armBackfillTimer(); refresh(); }}>Zurück zu heute</button>
+        </div>
+      )}
 
       {duplicateWarning && !dismissedDuplicate && (
         <DuplicateWarning warning={duplicateWarning}
@@ -454,7 +483,7 @@ export default function Counter({ user }: { user: { id: string; username: string
         <button
           type="button"
           onClick={redo}
-          disabled={!ready || !redoEvent || selectedDay !== (now ? dayKey(now) : "")}
+          disabled={!ready || !redoEvent}
           className="undo-button redo-button"
           aria-label="Redo: Zuletzt stornierten Besuch wiederherstellen"
         >
@@ -464,7 +493,7 @@ export default function Counter({ user }: { user: { id: string; username: string
         <button
           type="button"
           onClick={undo}
-          disabled={!ready || !lastEvent || selectedDay !== (now ? dayKey(now) : "")}
+          disabled={!ready || !lastEvent}
           className="undo-button main-undo-button"
           aria-label="Undo: Letzten Besuch rückgängig machen"
         >
@@ -477,8 +506,22 @@ export default function Counter({ user }: { user: { id: string; username: string
       {storageError && <div role="alert" className="error-message">{storageError} <button className="underline" onClick={refresh}>Erneut prüfen</button></div>}
     
       {/* Quick Event Input Modal */}
-      <Modal open={showEventModal} onClose={() => { if (!isSavingEvent) setShowEventModal(false); }} title="Event eintragen" maxWidth={480} className="interior-modal" showClose={!isSavingEvent}>
+      <Modal open={showEventModal} onClose={() => { if (!isSavingEvent) setShowEventModal(false); }} title={editingEventId ? "Event bearbeiten" : "Neues Event eintragen"} maxWidth={480} className="interior-modal" showClose={!isSavingEvent}>
             <form onSubmit={handleSaveEvent} className="space-y-3">
+              {dayEvents.length > 0 && (
+                <div className="event-choice" role="group" aria-label="Events an diesem Tag">
+                  {dayEvents.map((item) => (
+                    <button key={item.id} type="button" className="secondary-button btn-small" aria-pressed={editingEventId === item.id}
+                      onClick={() => { setEditingEventId(item.id); setEventDate(item.date); setEventTitle(item.title); setEventDesc(item.description || ""); }}>
+                      {item.title}
+                    </button>
+                  ))}
+                  <button type="button" className="secondary-button btn-small" aria-pressed={!editingEventId}
+                    onClick={() => { setEditingEventId(null); setEventTitle(""); setEventDesc(""); }}>
+                    + Weiteres Event
+                  </button>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium mb-1">Tag auswählen:</label>
                 <input

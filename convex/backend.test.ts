@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
+import { ConvexError } from "convex/values";
 import { api, components } from "./_generated/api";
 import schema from "./schema";
 import authSchema from "./betterAuth/schema";
@@ -109,6 +110,29 @@ describe("Besuche hochladen", () => {
     const many = Array.from({ length: 101 }, (_, i) => click(`many-${i}`, "u15", staff.id));
     await expect(staff.as.mutation(api.visits.upload, { records: many })).rejects.toThrow("Ungültiger Klickstapel");
     await expect(staff.as.mutation(api.visits.upload, { records: [{ id: u("x"), group: "kids" }] })).rejects.toThrow("Ungültiger Klickstapel");
+  });
+});
+
+describe("Fehlermeldungen und Nachträge", () => {
+  test("Meldungen für Benutzer bleiben auch in Produktion lesbar (ConvexError)", async () => {
+    const t = setup();
+    const anna = await signIn(t, "anna"), ben = await signIn(t, "ben");
+    const error = await ben.as.mutation(api.visits.upload, { records: [click("a", "u15", anna.id)] }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ConvexError);
+    expect((error as ConvexError<string>).data).toContain("anderen Benutzer");
+  });
+
+  test("ein Klick für einen früheren Tag zählt für diesen Tag, Undo ebenso", async () => {
+    const t = setup();
+    const admin = await signIn(t, "admin", "admin"), staff = await signIn(t, "anna");
+    const earlier = { timestamp: "2026-10-19T19:15:00.000Z", order: Date.parse("2026-10-20T19:15:00.000Z") };
+    await staff.as.mutation(api.visits.upload, { records: [click("past-a", "u15", staff.id, earlier), click("past-b", "o15", staff.id, earlier)] });
+    await staff.as.mutation(api.visits.upload, { records: [click("past-b", "o15", staff.id, { ...earlier, cancelled: true, corrections: [undo("past-undo")] })] });
+    const page = { cursor: null, numItems: 100 };
+    const daily = await admin.as.query(api.exports.page, { kind: "daily", from: "2026-10-19", to: day, paginationOpts: page });
+    expect(daily.page).toMatchObject([{ date: "2026-10-19", u15: 1, o15: 0 }]);
+    const live = await staff.as.query(api.visits.live, { date: "2026-10-19" });
+    expect(live).toMatchObject({ u15: 1, o15: 0 });
   });
 });
 

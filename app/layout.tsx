@@ -4,6 +4,7 @@ import ConvexProvider from "@/components/convex-provider";
 import { getToken } from "@/lib/auth-server";
 import AppUpdater from "@/components/app-updater";
 import StagingEnvironment from "@/components/staging-banner";
+import GermanValidation from "@/components/german-validation";
 
 export const metadata: Metadata = {
   title: "ChaxterLog · Einfach zählen.",
@@ -30,6 +31,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="de" data-environment={process.env.NEXT_PUBLIC_IS_STAGING === "true" ? "staging" : "production"}>
       <body>
         <StagingEnvironment />
+        <GermanValidation />
         <ConvexProvider initialToken={token}>{children}</ConvexProvider>
         <AppUpdater />
       </body>

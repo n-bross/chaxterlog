@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { query, mutation, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
@@ -16,7 +16,7 @@ export async function visitRecord(ctx: QueryCtx, visit: Doc<"visits">) {
 }
 export const live = query({ args: { date: v.string() }, handler: async (ctx, { date }) => {
   await requireActor(ctx);
-  if (!validDay(date)) throw new Error("Ungültiges Datum.");
+  if (!validDay(date)) throw new ConvexError("Ungültiges Datum.");
   const [daily, u, o, undone, setup] = await Promise.all([
     ctx.db.query("dailyCounts").withIndex("date", (q) => q.eq("date", date)).unique(),
     ctx.db.query("visits").withIndex("groupActive", (q) => q.eq("date", date).eq("group", "u15").eq("cancelled", false)).order("desc").first(),
@@ -31,19 +31,19 @@ export const live = query({ args: { date: v.string() }, handler: async (ctx, { d
 
 export const upload = mutation({ args: { records: v.array(v.any()) }, handler: async (ctx, args) => {
   const actor = await requireActor(ctx);
-  if (args.records.length > 100 || JSON.stringify(args).length > 120_000 || !args.records.every(isVisitRecord)) throw new Error("Ungültiger Klickstapel.");
+  if (args.records.length > 100 || JSON.stringify(args).length > 120_000 || !args.records.every(isVisitRecord)) throw new ConvexError("Ungültiger Klickstapel.");
   const ack: { id: string; cancelled: boolean; date: string; revision: number }[] = [];
   for (const event of args.records) {
-    if ((event.corrections ?? []).some((c) => c.userId && c.userId !== actor.id)) throw new Error("Offene Korrekturen gehören zu einem anderen Benutzer. Bitte mit diesem Konto anmelden.");
+    if ((event.corrections ?? []).some((c) => c.userId && c.userId !== actor.id)) throw new ConvexError("Offene Korrekturen gehören zu einem anderen Benutzer. Bitte mit diesem Konto anmelden.");
     let old = await ctx.db.query("visits").withIndex("uuid", (q) => q.eq("id", event.id)).unique();
-    if (!old && !event.legacy && event.userId && event.userId !== actor.id) throw new Error("Offene Klicks gehören zu einem anderen Benutzer. Bitte mit diesem Konto anmelden.");
+    if (!old && !event.legacy && event.userId && event.userId !== actor.id) throw new ConvexError("Offene Klicks gehören zu einem anderen Benutzer. Bitte mit diesem Konto anmelden.");
     const isNew = !old;
     let newAction = false;
     const date = old?.date ?? dayKey(new Date(event.timestamp));
-    if (!validDay(date) || date < "2000-01-01" || date > "2100-12-31") throw new Error("Ungültiger Besuchszeitpunkt.");
+    if (!validDay(date) || date < "2000-01-01" || date > "2100-12-31") throw new ConvexError("Ungültiger Besuchszeitpunkt.");
     if (!old && event.redoOf) {
       const original = await ctx.db.query("visits").withIndex("uuid", (q) => q.eq("id", event.redoOf!)).unique();
-      if (!original?.cancelled || event.id !== redoId(original.id) || original.timestamp !== event.timestamp || original.group !== event.group) throw new Error("Redo benötigt den stornierten Ursprung.");
+      if (!original?.cancelled || event.id !== redoId(original.id) || original.timestamp !== event.timestamp || original.group !== event.group) throw new ConvexError("Redo benötigt den stornierten Ursprung.");
       await ctx.db.patch(original._id, { redoAvailable: false });
     }
     const deviceId = event.deviceId ? await touchDevice(ctx, { id: event.deviceId, name: event.deviceName ?? "Unbenannt", platform: event.platform ?? "Unbekannt" }, actor.username) : undefined;
@@ -61,7 +61,7 @@ export const upload = mutation({ args: { records: v.array(v.any()) }, handler: a
     for (const action of event.corrections ?? []) {
       const exists = await ctx.db.query("corrections").withIndex("uuid", (q) => q.eq("id", action.id)).unique();
       if (exists) continue;
-      if ((action.kind === "redo" && !old.redoOf) || (action.kind === "undo" && !cancelled)) throw new Error("Ungültige Korrektur.");
+      if ((action.kind === "redo" && !old.redoOf) || (action.kind === "undo" && !cancelled)) throw new ConvexError("Ungültige Korrektur.");
       const actionDevice = action.deviceId ? await touchDevice(ctx, { id: action.deviceId, name: action.deviceName ?? "Unbenannt", platform: action.platform ?? "Unbekannt" }, actor.username) : undefined;
       newAction = true;
       await ctx.db.insert("corrections", { id: action.id, visitId: old._id, date: dayKey(new Date(action.timestamp)), kind: action.kind, timestamp: action.timestamp, order: action.order ?? Date.parse(action.timestamp), receivedAt: new Date().toISOString(), userId: actor.id, username: actor.username, ...(actionDevice ? { deviceId: actionDevice, deviceName: (action.deviceName ?? "Unbenannt").slice(0, 40) } : {}) });

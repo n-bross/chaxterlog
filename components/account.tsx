@@ -31,7 +31,7 @@ export default function Account({ user }: { user: { username: string; role: stri
     try {
       setDevice(getDevice());
       if (typeof window !== "undefined") {
-        setLocalClicks(readRecords(window.localStorage).length);
+        setLocalClicks(readRecords(window.localStorage).filter((record) => !record.synced).length);
       }
     } catch {
       setMessage("Browserspeicher nicht verfügbar.");
@@ -146,8 +146,8 @@ export default function Account({ user }: { user: { username: string; role: stri
         </p>
         <div className="system-status-grid">
           <div className="status-item">
-            <span className="status-label">Lokale Klicks</span>
-            <span className="status-value">{localClicks}</span>
+            <span className="status-label">Noch nicht synchronisiert</span>
+            <span className="status-value">{localClicks ? `${localClicks} ${localClicks === 1 ? "Klick" : "Klicks"}` : "Alles übertragen"}</span>
           </div>
           <div className="status-item">
             <span className="status-label">Offline-Betrieb</span>
@@ -233,11 +233,16 @@ export default function Account({ user }: { user: { username: string; role: stri
             }
           }}
         >
-          <FloatingLabelInput label="Problembeschreibung (optional)"
+          <label className="block text-xs font-medium mb-1" htmlFor="support-notes">Problembeschreibung (optional)</label>
+          <textarea
+            id="support-notes"
+            rows={4}
             value={supportNotes}
-            onChange={(val) => setSupportNotes(val)}
+            onChange={(event) => setSupportNotes(event.target.value)}
             maxLength={500}
-           />
+            placeholder="Was ist passiert? Wann? Auf welchem Gerät?"
+            className="w-full resize-y"
+          />
           <LoadingButton
             className="secondary-button"
             disabled={supportBusy}

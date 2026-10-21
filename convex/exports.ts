@@ -1,5 +1,5 @@
 import { query } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { requireActor } from "./auth";
 import { visitRecord } from "./visits";
@@ -7,7 +7,7 @@ import { correctionRecord } from "./corrections";
 import { validDay } from "../lib/export";
 export const page = query({ args: { kind: v.union(v.literal("visits"), v.literal("daily"), v.literal("corrections")), from: v.string(), to: v.string(), paginationOpts: paginationOptsValidator }, handler: async (ctx, args) => {
   await requireActor(ctx, true);
-  if (!validDay(args.from) || !validDay(args.to) || args.from > args.to) throw new Error("Ungültiger Zeitraum.");
+  if (!validDay(args.from) || !validDay(args.to) || args.from > args.to) throw new ConvexError("Ungültiger Zeitraum.");
   const opts = { ...args.paginationOpts, numItems: 100 };
   if (args.kind === "visits") {
     const page = await ctx.db.query("visits").withIndex("date", (q) => q.gte("date", args.from).lte("date", args.to)).paginate(opts);

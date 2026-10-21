@@ -1,4 +1,5 @@
 "use client";
+import { errorMessage } from "@/lib/errors";
 import { convex } from "@/lib/convex-client";
 import { api } from "@/convex/_generated/api";
 import { listEvents } from "@/lib/client-data";
@@ -85,7 +86,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
       setShowAddModal(false);
       await loadEvents();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Fehler beim Speichern");
+      setError(errorMessage(err, "Fehler beim Speichern"));
     } finally {
       setIsSubmitting(false);
     }
@@ -111,7 +112,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
       setEditingEvent(null);
       await loadEvents();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Fehler beim Speichern der Änderung");
+      setError(errorMessage(err, "Fehler beim Speichern der Änderung"));
     } finally {
       setIsSubmitting(false);
     }
@@ -144,7 +145,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
       setShowImportModal(false);
       await loadEvents();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Fehler beim Importieren");
+      setError(errorMessage(err, "Fehler beim Importieren"));
     } finally {
       setIsSubmitting(false);
     }
@@ -399,11 +400,18 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
                 />
               </div>
 
+              {importText.trim() && (() => {
+                const ics = /BEGIN:(VCALENDAR|VEVENT)/.test(importText);
+                if (!parsedPreview.length) return <p role="status" className="error-message text-xs">{ics ? "Keine Termine erkannt. Jeder Termin braucht DTSTART und SUMMARY." : "Keine Events erkannt. Jede Zeile braucht ein Datum (TT.MM.JJJJ oder JJJJ-MM-TT) und einen Titel, z. B. „25.10.2026; Herbstfest“."}</p>;
+                const skipped = ics ? 0 : importText.split(/\r?\n/).filter((line) => line.trim()).length - parsedPreview.length;
+                return skipped > 0 ? <p role="status" className="text-xs text-muted">{skipped} {skipped === 1 ? "Zeile wird" : "Zeilen werden"} übersprungen (kein erkennbares Datum oder kein Titel, z. B. Kopfzeile).</p> : null;
+              })()}
+
               {parsedPreview.length > 0 && (
                 <div className="import-preview-box p-3 rounded bg-gray-800/60 border border-gray-700">
                   <div className="flex items-center justify-between mb-2">
                     <strong className="text-xs text-emerald-400">
-                      ✓ {parsedPreview.length} Event(s) erkannt
+                      ✓ {parsedPreview.length} {parsedPreview.length === 1 ? "Event" : "Events"} erkannt
                     </strong>
                     <span className="text-xs text-muted">Vorschau</span>
                   </div>
@@ -433,7 +441,7 @@ export default function EventsManager({ onEventsChange, highlightDate }: EventsM
                 </button>
                 <LoadingButton type="button" className="primary-button" onClick={handleExecuteImport}
                   disabled={isSubmitting || parsedPreview.length === 0} busy={isSubmitting} busyLabel="Wird importiert …">
-                  {`${parsedPreview.length} Event(s) übernehmen`}
+                  {`${parsedPreview.length} ${parsedPreview.length === 1 ? "Event" : "Events"} übernehmen`}
                 </LoadingButton>
               </div>
             </div>
