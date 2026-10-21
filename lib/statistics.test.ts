@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analyzeEvents, periodRange, shiftPeriod } from "./statistics.ts";
+import { analyzeAggregates, analyzeEvents, periodRange, previousRange, shiftPeriod } from "./statistics.ts";
 import type { TrackEvent } from "./tracking.ts";
 const event = (timestamp: string, group: "u15" | "o15" = "u15"): TrackEvent => ({ id: "e3d907b1-05aa-4eac-89a0-34c7e514bc01", timestamp, group });
 
@@ -86,4 +86,21 @@ test("custom period filters accurately and builds daily or monthly series", () =
   assert.equal(custom.series.length, 15);
   assert.equal(custom.range?.start, "2026-10-01");
   assert.equal(custom.range?.end, "2026-10-15");
+});
+
+test("each period is compared with the one before it", () => {
+  assert.deepEqual(previousRange("day", "2026-10-21"), { start: "2026-10-14", end: "2026-10-14", label: "gleichem Wochentag der Vorwoche" });
+  assert.deepEqual(previousRange("week", "2026-10-21"), { start: "2026-10-12", end: "2026-10-18", label: "Vorwoche" });
+  assert.deepEqual(previousRange("month", "2026-03-31"), { start: "2026-02-01", end: "2026-02-28", label: "Vormonat" });
+  assert.deepEqual(previousRange("year", "2026-10-21"), { start: "2025-01-01", end: "2025-12-31", label: "Vorjahr" });
+  assert.deepEqual(previousRange("custom", "2026-10-11", "2026-10-20"), { start: "2026-10-01", end: "2026-10-10", label: "vorherigem Zeitraum" });
+  assert.equal(previousRange("all", "2026-10-21"), null);
+});
+
+test("backfilled visits in hour 0 count in totals but are reported as undated", () => {
+  const hours = (values: Record<number, number>) => Array.from({ length: 24 }, (_, hour) => values[hour] ?? 0);
+  const stats = analyzeAggregates([{ date: "2026-10-20", u15: 5, o15: 2, u: hours({ 0: 2, 16: 3 }), o: hours({ 18: 2 }) }], "day", "2026-10-20");
+  assert.equal(stats.total, 7);
+  assert.equal(stats.undated.total, 2);
+  assert.equal(stats.undated.u15, 2);
 });

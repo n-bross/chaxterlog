@@ -52,9 +52,10 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
     <main className="auth-screen">
       <div className="auth-card">
         <div className="auth-logo-wrap">
-          <ChaxterLogo />
+          <ChaxterLogo priority />
         </div>
         <h1>{setup ? "Admin einrichten" : "Anmelden"}</h1>
+        <p className="auth-subtitle">{setup ? "Einmalig: Passwort für den Admin-Zugang festlegen." : "Besucherzählung im Schülercafé Grafing"}</p>
         <form onSubmit={submit}>
           <FloatingLabelInput label="Benutzername"
               name="username"

@@ -25,8 +25,8 @@ export default function RemoteActivity({ range }: { range: { start: string; end:
     return () => { active = false; };
   }, [from, to, kind, cursor]);
   return <>
-    <div className="account-btn-group"><button className="secondary-button" onClick={() => setKind("visits")} aria-pressed={kind === "visits"}>Besuche</button><button className="secondary-button" onClick={() => setKind("corrections")} aria-pressed={kind === "corrections"}>Undo &amp; Redo</button></div>
-    {error ? <p role="alert">{error}</p> : busy ? <p>Daten werden geladen …</p> : kind === "visits" ? <ActivityLog records={visits} range={range} /> : <CorrectionLog entries={corrections} />}
+    <div className="account-btn-group log-kind-switch"><button className="secondary-button btn-small" onClick={() => setKind("visits")} aria-pressed={kind === "visits"}>Besuche</button><button className="secondary-button btn-small" onClick={() => setKind("corrections")} aria-pressed={kind === "corrections"}>Undo &amp; Redo</button></div>
+    {error ? <p role="alert" className="error-message">{error}</p> : busy ? <p className="analytics-note">Daten werden geladen …</p> : kind === "visits" ? <ActivityLog records={visits} range={range} /> : <CorrectionLog entries={corrections} />}
     <nav className="events-pagination" aria-label="Protokollseiten"><button className="period-arrow" disabled={busy || !history.length} onClick={() => { setCursor(history.at(-1) ?? null); setHistory(history.slice(0, -1)); }}>←</button><span>Seite {history.length + 1} · bis zu 50 Einträge</span><button className="period-arrow" disabled={busy || !next} onClick={() => { setHistory([...history, cursor]); setCursor(next); }}>→</button></nav>
   </>;
 }

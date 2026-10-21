@@ -33,17 +33,16 @@ const timeFormatter = new Intl.DateTimeFormat("en-GB", {
 });
 const berlinTime = (date: Date) => timeFormatter.format(date);
 
-// The same Berlin wall-clock time on another café day: clicks entered for a past day keep a realistic hour.
-export function atBerlinTime(day: string, reference: Date = new Date()): Date {
+// Visits entered later for a past day get no invented clock time: they are stamped 00:00 Berlin
+// on that day. The café is never open then, so statistics read hour 0 as "nachgetragen".
+export const BACKFILL_HOUR = 0;
+export function backfillTime(day: string): Date {
   const [year, month, date] = day.split("-").map(Number);
-  const [hour, minute, second] = berlinTime(reference).split(":").map(Number);
-  const wall = Date.UTC(year, month - 1, date, hour, minute, second, reference.getUTCMilliseconds());
   for (const offsetHours of [1, 2]) {
-    const candidate = new Date(wall - offsetHours * 3_600_000);
-    if (dayKey(candidate) === day && berlinTime(candidate) === berlinTime(reference)) return candidate;
+    const candidate = new Date(Date.UTC(year, month - 1, date) - offsetHours * 3_600_000);
+    if (dayKey(candidate) === day && berlinTime(candidate) === "00:00:00") return candidate;
   }
-  // The hour skipped by the spring clock change does not exist; use midday instead.
-  return new Date(Date.UTC(year, month - 1, date, 11));
+  throw new Error("Ungültiges Kalenderdatum");
 }
 
 export function isTrackEvent(value: unknown): value is TrackEvent {

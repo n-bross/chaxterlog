@@ -19,8 +19,6 @@ export type ActivityItem = {
   redoOf?: string;
   visitTimestamp?: string;
   visitId?: string;
-  isRapidFollow?: boolean;
-  rapidDiffSeconds?: number;
   undoneBy?: {
     username?: string;
     timestamp: string;
@@ -111,19 +109,6 @@ export default function ActivityLog({
     // Sort newest first
     list.sort((a, b) => b.order - a.order || b.id.localeCompare(a.id));
 
-    // Detect rapid sequence visits in the same group (< 5 seconds)
-    const visits = list.filter((i) => i.kind === "visit");
-    for (let i = 0; i < visits.length - 1; i++) {
-      const current = visits[i];
-      const older = visits[i + 1];
-      if (current.group === older.group) {
-        const diff = Math.abs(current.order - older.order);
-        if (diff < 5000) {
-          current.isRapidFollow = true;
-          current.rapidDiffSeconds = Math.max(1, Math.round(diff / 1000));
-        }
-      }
-    }
 
     return list;
   }, [records, range]);
@@ -148,8 +133,8 @@ export default function ActivityLog({
     <section className="analytics-panel activity-log-panel" aria-label="Aktivitätsverlauf und Korrekturen">
       <div className="analytics-panel-heading">
         <div>
-          <h3 className="text-base font-semibold">Verlauf &amp; Protokoll</h3>
-          <p className="text-xs text-muted">
+          <h3>Verlauf &amp; Protokoll</h3>
+          <p>
             Zählungen, Stornierungen und Wiederherstellungen. Die einzelnen Undo-/Redo-Aktionen stehen unter „Undo &amp; Redo“.
           </p>
         </div>
@@ -191,17 +176,12 @@ export default function ActivityLog({
                     )}
                     {item.kind === "undo" && (
                       <span className="activity-badge badge-undo">
-                        ↩ Undo -1 {isU15 ? "U15" : "Ü15"}
+                        Undo −1 {isU15 ? "U15" : "Ü15"}
                       </span>
                     )}
                     {item.kind === "redo" && (
                       <span className="activity-badge badge-redo">
-                        ↪ Redo +1 {isU15 ? "U15" : "Ü15"}
-                      </span>
-                    )}
-                    {item.isRapidFollow && !item.cancelled && (
-                      <span className="status-pill pill-warning" title={`Nur ${item.rapidDiffSeconds}s nach vorherigem Klick erfasst`}>
-                        ⚠️ Schnellfolge ({item.rapidDiffSeconds}s)
+                        Redo +1 {isU15 ? "U15" : "Ü15"}
                       </span>
                     )}
                   </div>
@@ -229,7 +209,7 @@ export default function ActivityLog({
 
                   {item.kind === "visit" && item.cancelled && (
                     <p className="activity-explanation text-warning">
-                      ⚠️ <strong>Falscher Klick / storniert:</strong> Dieser Eintrag wurde
+                      <strong>Storniert:</strong> Dieser Eintrag wurde
                       {item.undoneBy ? ` um ${formatTime(item.undoneBy.timestamp)} Uhr per Undo zurückgenommen` : " storniert"}
                       {item.undoneBy?.username ? ` von ${item.undoneBy.username}` : ""}.
                     </p>
@@ -237,22 +217,19 @@ export default function ActivityLog({
 
                   {item.kind === "visit" && item.redoOf && !item.cancelled && (
                     <p className="activity-explanation text-accent">
-                      ℹ️ <strong>Per Redo wiederhergestellt</strong>
+                      <strong>Per Redo wiederhergestellt</strong>
                     </p>
                   )}
 
-                  {item.isRapidFollow && !item.cancelled && (
-                    <p className="activity-explanation text-warning">
-                      ⚠️ <strong>Mögliche Doppelzählung:</strong> Dieser Klick erfolgte {item.rapidDiffSeconds} {item.rapidDiffSeconds === 1 ? "Sekunde" : "Sekunden"} nach einer vorherigen {isU15 ? "U15" : "Ü15"}-Erfassung.
-                    </p>
-                  )}
 
                   <div className="activity-meta">
                     <span className="activity-user">
-                      👤 {item.username || "Benutzer unbekannt"}
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 21v-1a8 8 0 0 1 16 0v1" /></svg>
+                      {item.username || "Benutzer unbekannt"}
                     </span>
                     <span className="activity-device">
-                      📱 {item.deviceName || item.platform || "Gerät nicht erfasst"}
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="6" y="2" width="12" height="20" rx="2.5" /><path d="M11 18h2" /></svg>
+                      {item.deviceName || item.platform || "Gerät nicht erfasst"}
                       {item.deviceName && item.platform && <small> · {item.platform}</small>}
                       {item.deviceId && <small> (ID: {item.deviceId.slice(0, 8)})</small>}
                     </span>

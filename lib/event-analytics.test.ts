@@ -1,56 +1,43 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { categorizeEvent, analyzeEventsAttendance } from "./event-analytics.ts";
+import { analyzeEventDays } from "./event-analytics.ts";
 import type { ChaxterEvent } from "./events.ts";
-import type { TrackEvent } from "./tracking.ts";
 
-test("categorizeEvent matches known sports, tournaments, and keywords", () => {
-  assert.equal(categorizeEvent("Kicker-Turnier Mai 2026").label, "Kicker-Turniere");
-  assert.equal(categorizeEvent("Großes Billard-Turnier").label, "Billard-Turniere");
-  assert.equal(categorizeEvent("Sommerfest 2026").label, "Feste & Partys");
-  assert.equal(categorizeEvent("Kinoabend mit Popcorn").label, "Kino & Filmabende");
-  assert.equal(categorizeEvent("Pizza backen").label, "Kochen & Grillen");
-  assert.equal(categorizeEvent("FIFA PlayStation Cup").label, "Gaming & Konsole");
+const event = (id: string, date: string, title: string): ChaxterEvent => ({ id, date, title, createdAt: "2026-10-01T00:00:00Z" });
+
+test("an event day is compared with normal days of the same weekday", () => {
+  // Fridays: 02.10. and 16.10. are normal (20 and 30 visits), 09.10. has an event (50 visits).
+  const days = [
+    { date: "2026-10-02", u15: 10, o15: 10 },
+    { date: "2026-10-09", u15: 20, o15: 30 },
+    { date: "2026-10-16", u15: 20, o15: 10 },
+    { date: "2026-10-08", u15: 90, o15: 90 }, // a Thursday never serves as comparison for a Friday
+  ];
+  const { eventDays, best, averageUplift } = analyzeEventDays([event("e1", "2026-10-09", "Kickerturnier")], days);
+  const [day] = eventDays;
+  assert.deepEqual(day.baseline, { u15: 15, o15: 10, total: 25, days: 2 });
+  assert.equal(day.uplift, 1); // 50 instead of 25: +100 %
+  assert.equal(day.upliftO15, 2); // 30 instead of 10
+  assert.equal(best?.date, "2026-10-09");
+  assert.equal(averageUplift, 1);
 });
 
-test("analyzeEventsAttendance calculates all-time best event and groups correctly", () => {
-  const events: ChaxterEvent[] = [
-    { id: "e1", date: "2026-10-10", title: "Kicker-Turnier #1", createdAt: "2026-10-01T00:00:00Z" },
-    { id: "e2", date: "2026-10-15", title: "Kicker-Turnier #2", createdAt: "2026-10-01T00:00:00Z" },
-    { id: "e3", date: "2026-10-20", title: "Großes Sommerfest", createdAt: "2026-10-01T00:00:00Z" },
+test("several events on one day share it, other event days and closed days are no baseline", () => {
+  const days = [
+    { date: "2026-10-02", u15: 5, o15: 5 }, // event day: not a normal day
+    { date: "2026-10-09", u15: 10, o15: 10 },
+    { date: "2026-10-23", u15: 0, o15: 0 }, // closed: ignored
   ];
+  const events = [event("a", "2026-10-09", "Kicker"), event("b", "2026-10-09", "Waffeln"), event("c", "2026-10-02", "Kino")];
+  const { eventDays, compared } = analyzeEventDays(events, days);
+  assert.equal(eventDays.length, 2);
+  assert.deepEqual(eventDays[0].events.map((item) => item.title), ["Kicker", "Waffeln"]);
+  assert.equal(eventDays[0].baseline, null);
+  assert.equal(eventDays[0].uplift, null);
+  assert.equal(compared, 0);
+});
 
-  const visits: TrackEvent[] = [
-    // 2026-10-10: 2 visits
-    { id: "v1", group: "u15", timestamp: "2026-10-10T14:00:00Z" },
-    { id: "v2", group: "o15", timestamp: "2026-10-10T15:00:00Z" },
-    // 2026-10-15: 4 visits
-    { id: "v3", group: "u15", timestamp: "2026-10-15T14:00:00Z" },
-    { id: "v4", group: "u15", timestamp: "2026-10-15T14:30:00Z" },
-    { id: "v5", group: "o15", timestamp: "2026-10-15T15:00:00Z" },
-    { id: "v6", group: "o15", timestamp: "2026-10-15T16:00:00Z" },
-    // 2026-10-20: 10 visits
-    ...Array.from({ length: 10 }, (_, i) => ({
-      id: `v-fest-${i}`,
-      group: "u15" as const,
-      timestamp: "2026-10-20T16:00:00Z",
-    })),
-  ];
-
-  const analysis = analyzeEventsAttendance(events, visits);
-
-  assert.equal(analysis.allTimeBestEvent?.title, "Großes Sommerfest");
-  assert.equal(analysis.allTimeBestEvent?.total, 10);
-
-  // Kicker-Turniere: 2 events with 2 + 4 = 6 visits, average = 3.0
-  const kickerGroup = analysis.eventGroups.find((g) => g.label === "Kicker-Turniere");
-  assert.ok(kickerGroup);
-  assert.equal(kickerGroup?.eventCount, 2);
-  assert.equal(kickerGroup?.totalVisits, 6);
-  assert.equal(kickerGroup?.averageVisits, 3.0);
-  assert.equal(kickerGroup?.bestEvent?.total, 4);
-
-  // Best group by average should be "Feste & Partys" (10 visits / 1 event = 10.0)
-  assert.equal(analysis.bestEventGroup?.label, "Feste & Partys");
-  assert.equal(analysis.bestEventGroup?.averageVisits, 10);
+test("normal days further than eight weeks away are not compared", () => {
+  const days = [{ date: "2026-01-02", u15: 10, o15: 0 }, { date: "2026-10-09", u15: 20, o15: 0 }];
+  assert.equal(analyzeEventDays([event("e", "2026-10-09", "Fest")], days).eventDays[0].baseline, null);
 });

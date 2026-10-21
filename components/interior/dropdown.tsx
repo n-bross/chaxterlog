@@ -316,11 +316,11 @@ export function Dropdown({
       )}
       <button
         {...triggerProps}
-        className={`flex h-10 select-none items-center justify-between gap-2 rounded-[10px] px-3.5 text-[13px] font-medium text-neutral-800 outline-none transition-[box-shadow,filter] duration-150 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4568FF] disabled:opacity-50 dark:text-neutral-200 ${
+        className={`flex h-10 select-none items-center justify-between gap-2 rounded-[10px] px-3.5 text-[13px] font-medium text-neutral-800 outline-none transition-[box-shadow,filter] duration-150 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 dark:text-neutral-200 ${
           isFullWidth ? "w-full" : "whitespace-nowrap"
         } ${
           open
-            ? "bg-[#fafafa] shadow-[inset_0_1px_2px_rgba(0,0,0,0.06),0_0_0_2px_#4568FF] dark:bg-[#151515] dark:shadow-[inset_0_1px_2px_rgba(0,0,0,0.4),0_0_0_2px_#4568FF]"
+            ? "bg-[#fafafa] shadow-[inset_0_1px_2px_rgba(0,0,0,0.06),0_0_0_2px_var(--accent)] dark:bg-[#151515] dark:shadow-[inset_0_1px_2px_rgba(0,0,0,0.4),0_0_0_2px_var(--accent)]"
             : "bg-white shadow-[0_1px_2px_rgba(0,0,0,0.10),0_0_0_1px_rgba(0,0,0,0.17)] hover:brightness-[0.98] dark:bg-[#111111] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.12)] dark:hover:brightness-110"
         }`}
       >
@@ -416,7 +416,7 @@ export function Dropdown({
                       initial={false}
                       animate={{ opacity: picked ? 1 : 0, scale: picked ? 1 : 0.7 }}
                       transition={cell}
-                      className="relative ml-2 flex size-[14px] shrink-0 items-center justify-center text-[#4568FF]"
+                      className="relative ml-2 flex size-[14px] shrink-0 items-center justify-center text-accent"
                     >
                       <svg viewBox="0 0 14 14" className="size-[14px]">
                         <path

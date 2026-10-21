@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { atBerlinTime, dayKey, isTrackEvent, readCounts, undoLastClick, STORAGE_PREFIX } from "./tracking.ts";
+import { backfillTime, dayKey, isTrackEvent, readCounts, undoLastClick, STORAGE_PREFIX } from "./tracking.ts";
 
 const event = { id: "e3d907b1-05aa-4eac-89a0-34c7e514bc01", group: "u15", timestamp: "2026-10-17T12:00:00.000Z" };
 function storageMock(entries: Record<string, string>): Storage {
@@ -22,18 +22,13 @@ test("Berlin day changes at local midnight, including summer and winter time", (
   assert.equal(dayKey(new Date("2026-12-01T23:00:00Z")), "2026-12-02");
 });
 
-test("clicks for a past day keep the Berlin wall-clock time, across summer and winter time", () => {
-  // 22:15 Berlin in summer, entered for a winter day: still 22:15 Berlin on that day.
-  const summerEvening = new Date("2026-07-01T20:15:30.250Z");
-  assert.equal(atBerlinTime("2026-12-01", summerEvening).toISOString(), "2026-12-01T21:15:30.250Z");
-  assert.equal(atBerlinTime("2026-06-30", summerEvening).toISOString(), "2026-06-30T20:15:30.250Z");
-  // Shortly after midnight stays on the chosen day rather than slipping into the next one.
-  const afterMidnight = new Date("2026-10-20T22:05:00.000Z");
-  assert.equal(dayKey(atBerlinTime("2026-10-19", afterMidnight)), "2026-10-19");
-  // 02:30 does not exist on the spring change day; fall back to midday of that day.
-  const halfPastTwo = new Date("2026-03-30T00:30:00.000Z");
-  assert.equal(dayKey(atBerlinTime("2026-03-29", halfPastTwo)), "2026-03-29");
-  assert.equal(atBerlinTime("2026-03-29", halfPastTwo).toISOString(), "2026-03-29T11:00:00.000Z");
+test("visits entered for a past day are stamped at Berlin midnight of that day", () => {
+  // Midnight Berlin on the chosen day, in winter (UTC+1) and summer (UTC+2) alike.
+  assert.equal(backfillTime("2026-12-01").toISOString(), "2026-11-30T23:00:00.000Z");
+  assert.equal(backfillTime("2026-06-30").toISOString(), "2026-06-29T22:00:00.000Z");
+  // Both clock-change days keep their midnight.
+  for (const day of ["2026-03-29", "2026-10-25"]) assert.equal(dayKey(backfillTime(day)), day);
+  assert.throws(() => backfillTime("2026-02-30"));
 });
 
 test("payload validation rejects malformed and unsupported events", () => {
