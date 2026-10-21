@@ -1,4 +1,4 @@
-import { dayKey, type TrackEvent } from "./tracking.ts";
+import { BACKFILL_HOUR, dayKey, type TrackEvent } from "./tracking.ts";
 
 export type Period = "day" | "week" | "month" | "year" | "custom" | "all";
 export type SeriesPoint = { key: string; label: string; u15: number; o15: number; total: number };
@@ -38,6 +38,23 @@ export function periodRange(period: Period, anchor: string, customEnd?: string):
     return { start, end: next.toISOString().slice(0, 10) };
   }
   return { start: `${anchor.slice(0, 4)}-01-01`, end: `${anchor.slice(0, 4)}-12-31` };
+}
+// The period a figure is compared against: the day, week, month or year before. While the chosen
+// period is still running, the previous one is cut to the same number of days, so a half month
+// is never compared with a whole one.
+const dayMonth = (day: string) => `${day.slice(8, 10)}.${day.slice(5, 7)}.`;
+export function previousRange(period: Period, anchor: string, customEnd?: string, today?: string): { start: string; end: string; label: string } | null {
+  const range = periodRange(period, anchor, customEnd);
+  if (!range || period === "all") return null;
+  const span = (calendarDate(range.end).getTime() - calendarDate(range.start).getTime()) / 86400000;
+  const previous = period === "custom"
+    ? { start: addDays(range.start, -span - 1), end: addDays(range.start, -1), label: "vorherigem Zeitraum" }
+    : { ...periodRange(period, shiftPeriod(period, anchor, -1))!, label: { day: "Vortag", week: "Vorwoche", month: "Vormonat", year: "Vorjahr" }[period] };
+  if (period !== "day" && today && range.start <= today && today < range.end) {
+    const end = addDays(previous.start, (calendarDate(today).getTime() - calendarDate(range.start).getTime()) / 86400000);
+    if (end < previous.end) return { start: previous.start, end, label: `${dayMonth(previous.start)}–${dayMonth(end)}` };
+  }
+  return previous;
 }
 export function shiftPeriod(period: Period, anchor: string, direction: number): string {
   if (period === "all" || period === "custom") return anchor;
@@ -121,12 +138,14 @@ export function analyzeEvents(events: WeightedEvent[], period: Period, anchor: s
       if (item) increment(item, event);
     }
   }
+  // Hour 0 holds visits entered later without a clock time; they count, but not in the hour chart.
+  const undated = { ...hours[BACKFILL_HOUR] };
   const topDays = [...sortedDays].sort((a, b) => b.total - a.total || b.key.localeCompare(a.key));
   const total = counts.u15 + counts.o15;
   return {
     range, events: visible, counts, total, recordedDays: days.size,
     average: days.size ? total / days.size : 0,
-    weekdays, hours, series: [...series.values()], unit,
+    weekdays, hours, undated, series: [...series.values()], unit,
     bestWeekdays: bestAverage ? weekdays.filter((item) => item.average === bestAverage) : [],
     bestHours: bestHourCount ? hours.filter((item) => item.total === bestHourCount) : [],
     bestDays: bestDayCount ? sortedDays.filter((item) => item.total === bestDayCount) : [],

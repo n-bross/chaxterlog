@@ -322,7 +322,7 @@ export function ModalAction({
     <button
       type={type}
       {...rest}
-      className={`inline-grid h-8 select-none place-items-center rounded-[8px] px-3 text-[12.5px] font-medium outline-none transition-[filter] duration-150 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4568FF] disabled:opacity-50 ${ACTION_TONES[tone]} ${className}`}
+      className={`inline-grid h-8 select-none place-items-center rounded-[8px] px-3 text-[12.5px] font-medium outline-none transition-[filter] duration-150 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 ${ACTION_TONES[tone]} ${className}`}
     />
   );
 }
@@ -466,7 +466,7 @@ export function Modal({
                   type="button"
                   onClick={onClose}
                   aria-label={closeLabel}
-                  className="-mr-1 -mt-1 grid size-7 shrink-0 place-items-center rounded-[7px] text-neutral-500 outline-none transition-colors duration-150 hover:bg-neutral-100 hover:text-neutral-800 focus-visible:text-neutral-800 focus-visible:shadow-[inset_0_0_0_1px_#4568FF] dark:text-neutral-400 dark:hover:bg-white/[0.08] dark:hover:text-neutral-100 dark:focus-visible:text-neutral-100 dark:focus-visible:shadow-[inset_0_0_0_1px_#4568FF]"
+                  className="-mr-1 -mt-1 grid size-7 shrink-0 place-items-center rounded-[7px] text-neutral-500 outline-none transition-colors duration-150 hover:bg-neutral-100 hover:text-neutral-800 focus-visible:text-neutral-800 focus-visible:shadow-[inset_0_0_0_1px_var(--accent)] dark:text-neutral-400 dark:hover:bg-white/[0.08] dark:hover:text-neutral-100 dark:focus-visible:text-neutral-100 dark:focus-visible:shadow-[inset_0_0_0_1px_var(--accent)]"
                 >
                   {CLOSE_ICON}
                 </button>

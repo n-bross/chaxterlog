@@ -2,180 +2,85 @@
 
 import { useMemo } from "react";
 import type { ChaxterEvent } from "@/lib/events";
-import type { TrackEvent } from "@/lib/tracking";
-import { analyzeEventsAttendance, type EventGroupStats, type EventWithStats } from "@/lib/event-analytics";
+import { analyzeEventDays, type EventDay } from "@/lib/event-analytics";
 
 const number = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
-const shortDate = (day: string) =>
-  new Date(`${day}T12:00:00Z`).toLocaleDateString("de-DE", {
-    timeZone: "Europe/Berlin",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+const percent = new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 0, signDisplay: "exceptZero" });
+const dayLabel = (day: string) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin", weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+const weekdayName = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin", weekday: "long" });
+const titles = (day: EventDay) => day.events.map((item) => item.title).join(" + ");
 
-interface EventPerformanceProps {
-  events: ChaxterEvent[];
-  visits: TrackEvent[];
-  days?: { date: string; u15: number; o15: number }[];
-  onSelectDay?: (date: string) => void;
+function Uplift({ value }: { value: number | null }) {
+  if (value === null) return <span className="uplift" data-tone="none">–</span>;
+  return <span className="uplift" data-tone={value > 0.05 ? "up" : value < -0.05 ? "down" : "flat"}>{percent.format(value)}</span>;
 }
 
-export default function EventPerformance({ events, visits, days, onSelectDay }: EventPerformanceProps) {
-  const analysis = useMemo(() => analyzeEventsAttendance(events, visits, days), [events, visits, days]);
-
-  const maxGroupAverage = useMemo(() => {
-    return Math.max(1, ...analysis.eventGroups.map((g) => g.averageVisits));
-  }, [analysis.eventGroups]);
-
-  const maxSingleTotal = useMemo(() => {
-    return Math.max(1, ...analysis.topSingleEvents.map((e) => e.total));
-  }, [analysis.topSingleEvents]);
+export default function EventPerformance({ events, days, onSelectDay }: {
+  events: ChaxterEvent[];
+  days: { date: string; u15: number; o15: number }[];
+  onSelectDay?: (date: string) => void;
+}) {
+  const { eventDays, compared, averageUplift, best } = useMemo(() => analyzeEventDays(events, days), [events, days]);
 
   if (events.length === 0) {
-    return null;
+    return <p className="events-empty">Noch keine Events eingetragen. Events trägt man auf der Zählseite über den Kalender-Knopf ein (dort auch „Events verwalten“). Sobald welche angelegt sind, zeigt sich hier, ob sie mehr Besucher gebracht haben.</p>;
   }
+  const past = eventDays.filter((day) => day.total > 0);
 
   return (
-    <section className="event-performance-section analytics-panel" aria-label="Event-Auswertung & Erfolge">
-      <div className="analytics-panel-heading">
-        <div>
-          <h3 className="text-base font-semibold flex items-center gap-2">
-            <span>🏆</span> Event-Auswertung: Was läuft am besten?
-          </h3>
-          <p className="text-xs text-muted">
-            All-Time Rekord-Events und Vergleich der beliebtesten Event-Gruppen (z. B. Kicker, Billard, Feste)
-          </p>
+    <section className="event-performance-section" aria-label="Event-Auswertung">
+      <p className="analytics-note">
+        Jeder Event-Tag wird mit normalen Tagen desselben Wochentags verglichen (ohne Event, geöffnet, bis zu acht Wochen davor oder danach).
+        Besuche lassen sich keinem einzelnen Event zuordnen; mehrere Events an einem Tag teilen sich dessen Besucher.
+      </p>
+
+      <div className="insight-grid insight-grid-2">
+        <article className="analytics-panel insight-card">
+          <h3>Event-Tage im Schnitt</h3>
+          <strong>{averageUplift === null ? "Noch kein Vergleich" : `${percent.format(averageUplift)} Besuche`}</strong>
+          <p>{averageUplift === null ? "Dafür braucht es Besuche am Event-Tag und an normalen gleichen Wochentagen." : `gegenüber normalen gleichen Wochentagen · ${compared} ${compared === 1 ? "Event-Tag" : "Event-Tage"} verglichen`}</p>
+        </article>
+        <article className="analytics-panel insight-card">
+          <h3>Stärkstes Event</h3>
+          <strong>{best ? titles(best) : "–"}</strong>
+          <p>{best ? `${dayLabel(best.date)} · ${best.total} Besuche, ${percent.format(best.uplift!)} gegenüber einem normalen ${weekdayName(best.date)}` : "Erscheint, sobald ein Event-Tag verglichen werden kann."}</p>
+        </article>
+      </div>
+
+      {past.length > 0 && (
+        <div className="analytics-panel">
+          <div className="analytics-panel-heading">
+            <div>
+              <h4>Alle Event-Tage</h4>
+              <p>Besuche am Event-Tag, dahinter der Durchschnitt normaler Tage</p>
+            </div>
+          </div>
+          <ol className="event-day-list">
+            {past.map((day) => (
+              <li key={day.date}>
+                <button type="button" className="event-day-row" onClick={() => onSelectDay?.(day.date)} title="Diesen Tag in der Statistik anzeigen">
+                  <span className="event-day-main">
+                    <strong>{titles(day)}</strong>
+                    <span>{dayLabel(day.date)}</span>
+                  </span>
+                  <span className="event-day-numbers">
+                    <span className="event-day-total">{day.total}</span>
+                    <span className="event-day-baseline">{day.baseline ? `sonst Ø ${number.format(day.baseline.total)}` : "kein Vergleichstag"}</span>
+                  </span>
+                  <Uplift value={day.uplift} />
+                  {day.baseline && (
+                    <span className="event-day-groups">
+                      <span><i className="counter-blue" aria-hidden="true" />U15 {day.u15} <Uplift value={day.upliftU15} /></span>
+                      <span><i className="counter-yellow" aria-hidden="true" />Ü15 {day.o15} <Uplift value={day.upliftO15} /></span>
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ol>
         </div>
-        <span className="analytics-basis">{events.length} Events erfasst</span>
-      </div>
-
-      {/* Highlight Cards */}
-      <div className="insight-grid mt-3">
-        <article className="analytics-panel insight-card">
-          <h3>All-Time Rekord-Event</h3>
-          <strong>
-            {analysis.allTimeBestEvent
-              ? `${analysis.allTimeBestEvent.title}`
-              : "Noch keine Besuchsdaten"}
-          </strong>
-          <p>
-            {analysis.allTimeBestEvent
-              ? `${shortDate(analysis.allTimeBestEvent.date)} · ${analysis.allTimeBestEvent.total} Besuche (U15: ${analysis.allTimeBestEvent.u15}, Ü15: ${analysis.allTimeBestEvent.o15})`
-              : "Sobald Besuche für Event-Tage erfasst sind, erscheint hier der Rekord."}
-          </p>
-        </article>
-
-        <article className="analytics-panel insight-card">
-          <h3>Beste Event-Gruppe (Ø Besuche)</h3>
-          <strong>
-            {analysis.bestEventGroup
-              ? `${analysis.bestEventGroup.icon} ${analysis.bestEventGroup.label}`
-              : "Noch keine Besuchsdaten"}
-          </strong>
-          <p>
-            {analysis.bestEventGroup
-              ? `Ø ${number.format(analysis.bestEventGroup.averageVisits)} Besuche pro Event (${analysis.bestEventGroup.eventCount} Events · ${analysis.bestEventGroup.totalVisits} Gesamtbesuche)`
-              : "Beliebteste Kategorie nach durchschnittlichen Besucherzahlen."}
-          </p>
-        </article>
-      </div>
-
-      {/* Two Columns: Event-Gruppen vs. Beste Einzelevents */}
-      <div className="analytics-chart-grid mt-4">
-        {/* Left Column: Event-Gruppen (Kicker vs Billard vs Feste) */}
-        <section className="analytics-panel">
-          <div className="analytics-panel-heading">
-            <div>
-              <h4 className="text-sm font-semibold">Event-Gruppen im Vergleich</h4>
-              <p className="text-xs text-muted">Ø Besucher pro Event-Kategorie</p>
-            </div>
-          </div>
-
-          {analysis.eventGroups.length === 0 ? (
-            <p className="text-xs text-muted py-3">Keine Event-Gruppen vorhanden.</p>
-          ) : (
-            <div className="analytics-bars" role="list" aria-label="Event-Gruppen Vergleich">
-              {analysis.eventGroups.map((group, index) => {
-                const medal = index === 0 ? "🥇 " : index === 1 ? "🥈 " : index === 2 ? "🥉 " : `#${index + 1} `;
-                return (
-                  <div
-                    key={group.key}
-                    className="analytics-bar-row"
-                    role="listitem"
-                    title={`${group.eventCount} Event(s) durchgeführt, ${group.totalVisits} Besuche gesamt`}
-                  >
-                    <span className="analytics-bar-label flex items-center gap-1.5 truncate">
-                      <span className="font-semibold text-xs">{medal}</span>
-                      <span>{group.icon}</span>
-                      <span className="truncate">{group.label}</span>
-                    </span>
-                    <span className="analytics-bar-track" aria-hidden="true">
-                      <span
-                        className="analytics-bar-fill"
-                        style={{ width: `${(group.averageVisits / maxGroupAverage) * 100}%` }}
-                      >
-                        <span className="counter-blue" style={{ flex: group.u15Total }} />
-                        <span className="counter-yellow" style={{ flex: group.o15Total }} />
-                      </span>
-                    </span>
-                    <span className="analytics-bar-value flex items-center gap-1">
-                      <span>Ø {number.format(group.averageVisits)}</span>
-                      <small className="text-muted text-[11px]">({group.eventCount}×)</small>
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* Right Column: Top Einzelevents All-Time */}
-        <section className="analytics-panel">
-          <div className="analytics-panel-heading">
-            <div>
-              <h4 className="text-sm font-semibold">Beste Einzelevents (All-Time)</h4>
-              <p className="text-xs text-muted">Die besucherstärksten Event-Tage</p>
-            </div>
-          </div>
-
-          {analysis.topSingleEvents.length === 0 ? (
-            <p className="text-xs text-muted py-3">Noch keine Besuchsdaten an Event-Tagen.</p>
-          ) : (
-            <div className="analytics-bars" role="list" aria-label="Beste Einzelevents">
-              {analysis.topSingleEvents.slice(0, 7).map((ev, index) => {
-                const medal = index === 0 ? "🥇 " : index === 1 ? "🥈 " : index === 2 ? "🥉 " : `#${index + 1} `;
-                return (
-                  <div
-                    key={ev.id}
-                    className="analytics-bar-row best-day-row"
-                    role="listitem"
-                    onClick={() => onSelectDay?.(ev.date)}
-                    style={{ cursor: onSelectDay ? "pointer" : "default" }}
-                    title="Klicken, um diesen Event-Tag in der Statistik anzuzeigen"
-                  >
-                    <span className="analytics-bar-label flex items-center gap-1.5 truncate">
-                      <span className="font-semibold text-xs">{medal}</span>
-                      <span className="truncate font-medium">{ev.title}</span>
-                      <small className="text-muted text-[11px] whitespace-nowrap">({shortDate(ev.date)})</small>
-                    </span>
-                    <span className="analytics-bar-track" aria-hidden="true">
-                      <span
-                        className="analytics-bar-fill"
-                        style={{ width: `${(ev.total / maxSingleTotal) * 100}%` }}
-                      >
-                        <span className="counter-blue" style={{ flex: ev.u15 }} />
-                        <span className="counter-yellow" style={{ flex: ev.o15 }} />
-                      </span>
-                    </span>
-                    <span className="analytics-bar-value">{number.format(ev.total)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      </div>
+      )}
     </section>
   );
 }

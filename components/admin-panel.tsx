@@ -5,11 +5,33 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FloatingLabelInput } from "./interior/floating-label";
 import { LoadingButton } from "./interior/loading-button";
-import { AccordionSection } from "./interior/accordion";
+import { Accordion, AccordionSection } from "./interior/accordion";
+import RemoteActivity from "./remote-activity";
+import DeleteEntriesDialog from "./delete-entries-dialog";
+import { dayKey } from "@/lib/tracking";
+import { addDays } from "@/lib/statistics";
 import { Dropdown } from "./interior/dropdown";
 import { PasswordStrength } from "./interior/password-strength";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+
+// Individual clicks and corrections load only while this section is open.
+function ActivitySection() {
+  const [open, setOpen] = useState<readonly string[]>([]);
+  const [from, setFrom] = useState(() => addDays(dayKey(), -6));
+  const [to, setTo] = useState(() => dayKey());
+  const content = (
+    <div className="accordion-content">
+      <div className="form-row">
+        <label>Von<input type="date" value={from} max={to} onChange={(event) => { if (event.target.value) setFrom(event.target.value); }} /></label>
+        <label>Bis<input type="date" value={to} min={from} onChange={(event) => { if (event.target.value) setTo(event.target.value); }} /></label>
+      </div>
+      <RemoteActivity range={{ start: from, end: to }} />
+    </div>
+  );
+  return <Accordion headingLevel={2} maxPanelHeight={100000} open={open} onOpenChange={setOpen}
+    items={[{ id: "activity", title: <span className="accordion-heading"><span>Aktivitätsprotokoll</span><span className="accordion-description">Einzelne Klicks mit Benutzer und Gerät, Undo und Redo</span></span>, content: open.includes("activity") ? content : null }]} />;
+}
 
 type User = { id: string; username: string; role: string; banned: boolean | null };
 type Device = { id: string; name: string; platform: string; last_seen: string; last_user: string | null };
@@ -56,6 +78,7 @@ export default function AdminPanel() {
   const [resetUserId, setResetUserId] = useState<string>("");
   const [createUsername, setCreateUsername] = useState("");
   const [resetPassword, setResetPassword] = useState("");
+  const [entriesUser, setEntriesUser] = useState<User | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -152,13 +175,18 @@ export default function AdminPanel() {
     <main className="manage-screen">
       <header className="manage-header">
         <Link className="back-link" href="/konto">
-          ← Konto
+          <span className="back-arrow" aria-hidden="true">←</span> Konto
         </Link>
         <h1>Admin</h1>
-        <div style={{ width: 80 }} />
+        <span aria-hidden="true" />
       </header>
 
-      {error && <p className="error">{error}</p>}
+      {error && <p role="alert" className="error-message">{error}</p>}
+      {message && (
+        <aside className="notification" role="status" aria-live="polite">
+          {message}
+        </aside>
+      )}
 
       {/* Support & Diagnosemeldungen */}
       <AccordionSection
@@ -255,9 +283,9 @@ export default function AdminPanel() {
             })}
           </div>
         )}
+        {data?.cursors.reports && <button className="secondary-button load-more" disabled={busy} onClick={() => more("reports")}>Weitere Meldungen laden</button>}
       </AccordionSection>
 
-      {data?.cursors.reports && <button className="secondary-button" disabled={busy} onClick={() => more("reports")}>Weitere Meldungen laden</button>}
       {/* Benutzerverwaltung */}
       <AccordionSection
         title="Mitarbeiter"
@@ -271,40 +299,46 @@ export default function AdminPanel() {
           <table>
             <thead>
               <tr>
-                <th>Benutzer</th>
-                <th>Rolle</th>
-                <th>Status</th>
-                <th>Aktion</th>
+                <th scope="col">Benutzer</th>
+                <th scope="col">Rolle</th>
+                <th scope="col">Status</th>
+                <th scope="col"><span className="sr-only">Aktion</span></th>
               </tr>
             </thead>
             <tbody>
               {data?.users.map((user) => (
                 <tr key={user.id}>
-                  <td>{user.username}</td>
-                  <td>{user.role}</td>
-                  <td>{user.banned ? "Gesperrt" : "Aktiv"}</td>
                   <td>
-                    {user.role !== "admin" && (
-                      <button
-                        className="danger-button"
-                        type="button"
-                        disabled={busy}
-                        onClick={() =>
-                          void change({
-                            action: user.banned ? "unban" : "ban",
-                            userId: user.id,
-                          })
-                        }
-                      >
-                        {user.banned ? "Freigeben" : "Sperren"}
-                      </button>
-                    )}
+                    <span className="user-cell" data-role={user.role}>
+                      <span className="user-initial" aria-hidden="true">{user.username.slice(0, 1)}</span>
+                      {user.username}
+                    </span>
+                  </td>
+                  <td>{user.role === "admin" ? "Admin" : "Mitarbeiter"}</td>
+                  <td><span className={`status-pill ${user.banned ? "banned" : "active"}`}>{user.banned ? "Gesperrt" : "Aktiv"}</span></td>
+                  <td>
+                    <span className="row-actions">
+                      <button type="button" className="secondary-button" disabled={busy} onClick={() => setEntriesUser(user)}>Einträge löschen</button>
+                      {user.role !== "admin" && (
+                        <button className="danger-button" data-action={user.banned ? "unban" : "ban"} type="button" disabled={busy}
+                          onClick={() => void change({ action: user.banned ? "unban" : "ban", userId: user.id })}>
+                          {user.banned ? "Freigeben" : "Sperren"}
+                        </button>
+                      )}
+                      {user.role !== "admin" && user.banned && (
+                        <button className="danger-button danger-solid" type="button" disabled={busy}
+                          onClick={() => { if (window.confirm(`Zugang „${user.username}“ endgültig löschen?\n\nGezählte Besuche bleiben erhalten und zeigen weiter diesen Namen. Sollen auch sie verschwinden, vorher „Einträge löschen“ verwenden.`)) void change({ action: "remove", userId: user.id }); }}>
+                          Zugang löschen
+                        </button>
+                      )}
+                    </span>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        {data?.cursors.users && <button className="secondary-button load-more" disabled={busy} onClick={() => more("users")}>Weitere Mitarbeiter laden</button>}
         <h3>Mitarbeiterzugang anlegen</h3>
         <form onSubmit={create}>
           <FloatingLabelInput label="Benutzername"
@@ -341,9 +375,7 @@ export default function AdminPanel() {
             <h3>Passwort neu setzen</h3>
             <form onSubmit={reset}>
               <div className="interior-field w-full">
-                <label className="text-[12px] font-medium text-neutral-400 block mb-1.5">
-                  Mitarbeiter
-                </label>
+                <span className="field-label">Mitarbeiter</span>
                 <Dropdown
                   name="userId"
                   label="Mitarbeiter"
@@ -375,6 +407,9 @@ export default function AdminPanel() {
         )}
       </AccordionSection>
 
+      <ActivitySection />
+      <DeleteEntriesDialog user={entriesUser} onClose={() => setEntriesUser(null)} onDone={(text) => { setEntriesUser(null); setMessage(text); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
+
       <AccordionSection title="Geräte / Browserinstallationen" description="Gerätenamen und letzte Aktivität im Überblick">
         <p className="muted">
           Gerätenamen lassen sich auf dem jeweiligen Gerät unter „Konto“ ändern. Keine Hardware-ID und keine GPS-Ortung. Letzte Aktivität: letzter Upload oder Speichern des Gerätenamens.
@@ -397,21 +432,15 @@ export default function AdminPanel() {
                   <td>{device.platform}</td>
                   <td>{device.last_user ?? "–"}</td>
                   <td>{date(device.last_seen)}</td>
-                  <td title={device.id}>{device.id.slice(0, 8)}</td>
+                  <td title={device.id} className="mono-cell">{device.id.slice(0, 8)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        {data?.cursors.devices && <button className="secondary-button load-more" disabled={busy} onClick={() => more("devices")}>Weitere Geräte laden</button>}
       </AccordionSection>
 
-      {message && (
-        <aside className="notification" role="status" aria-live="polite">
-          {message}
-        </aside>
-      )}
-      {data?.cursors.users && <button className="secondary-button" disabled={busy} onClick={() => more("users")}>Weitere Mitarbeiter laden</button>}
-      {data?.cursors.devices && <button className="secondary-button" disabled={busy} onClick={() => more("devices")}>Weitere Geräte laden</button>}
     </main>
   );
 }

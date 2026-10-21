@@ -267,7 +267,7 @@ export function Accordion({
 
   return (
     <div
-      className={`divide-y divide-black/[0.07] overflow-hidden rounded-[11px] border border-black/10 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)] dark:divide-white/[0.07] dark:border-white/10 dark:bg-[#111111] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4)] ${className}`}
+      className={`interior-accordion divide-y divide-hairline overflow-hidden ${className}`}
     >
       {items.map((item) => (
         <AccordionRow
@@ -318,7 +318,7 @@ function AccordionRow({
       <div role="heading" aria-level={headingLevel}>
         <button
           {...header}
-          className="flex w-full items-center gap-3 px-3.5 py-3 text-left outline-none transition-colors duration-150 hover:bg-black/[0.03] focus-visible:bg-[#4568FF]/[0.06] focus-visible:shadow-[inset_0_0_0_1px_#4568FF] dark:hover:bg-white/[0.04] dark:focus-visible:bg-[#4568FF]/[0.1]"
+          className="flex w-full items-center gap-3 px-3.5 py-3 text-left outline-none transition-colors duration-150 hover:bg-black/[0.02] focus-visible:bg-accent/[0.06] focus-visible:shadow-[inset_0_0_0_1px_var(--accent)] dark:hover:bg-white/[0.04] dark:focus-visible:bg-accent/[0.1]"
         >
           <span
             className={`min-w-0 flex-1 truncate text-[13px] font-medium transition-colors duration-150 ${
@@ -369,7 +369,7 @@ function AccordionRow({
         <div
           {...panel}
           ref={ref}
-          className="outline-none focus-visible:shadow-[inset_0_0_0_1px_#4568FF]"
+          className="outline-none focus-visible:shadow-[inset_0_0_0_1px_var(--accent)]"
           style={{
             maxHeight: maxPanelHeight,
             overflowY: "auto",
@@ -388,7 +388,7 @@ function AccordionRow({
                   ? { duration: 0.18, ease: EASE }
                   : { duration: 0.14, ease: EXIT_EASE }
             }
-            className="px-3.5 pb-3.5 pt-0.5 text-[12.5px] leading-relaxed text-neutral-600 dark:text-neutral-300"
+            className="px-[18px] pb-[18px] pt-0.5 text-[14px] leading-relaxed text-ink-2"
           >
             {item.content}
           </motion.div>
@@ -403,7 +403,7 @@ function AccordionRow({
 export function AccordionSection({ title, description, meta, defaultOpen = false, children }: {
   title: string; description: string; meta?: string; defaultOpen?: boolean; children: React.ReactNode;
 }) {
-  return <Accordion className="interior-accordion" headingLevel={2} maxPanelHeight={1600}
+  return <Accordion headingLevel={2} maxPanelHeight={100000}
     defaultOpen={defaultOpen ? ["section"] : []}
     items={[{ id: "section", title: <span className="accordion-heading"><span>{title}</span><span className="accordion-description">{description}</span></span>, meta, content: <div className="accordion-content">{children}</div> }]} />;
 }

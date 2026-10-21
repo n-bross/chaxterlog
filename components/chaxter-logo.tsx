@@ -1,8 +1,10 @@
 import Image from "next/image";
-import chaxterLogo from "@/public/chaxter-logo.png";
+import wordmark from "@/public/chaxter-wordmark.png";
 
-export default function ChaxterLogo() {
-  return <span className="chaxter-logo">
-    <Image src={chaxterLogo} alt="Chaxter" sizes="160px" className="chaxter-logo-image" />
-  </span>;
+export default function ChaxterLogo({ className = "", priority = false }: { className?: string; priority?: boolean }) {
+  return (
+    <span className={`chaxter-logo ${className}`}>
+      <Image src={wordmark} alt="Chaxter" sizes="(max-width: 640px) 180px, 240px" priority={priority} />
+    </span>
+  );
 }

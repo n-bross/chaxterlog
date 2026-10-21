@@ -1,150 +1,174 @@
 "use client";
 
 import Link from "next/link";
-import ChaxterLogo from "@/components/chaxter-logo";
-import RemoteActivity from "@/components/remote-activity";
-import { listDays } from "@/lib/client-data";
+import { listDays, listEvents } from "@/lib/client-data";
 import type { DailyAggregate } from "@/lib/aggregation";
-import EventsManager from "@/components/events-manager";
 import EventAnalytics from "@/components/event-analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dayKey } from "@/lib/tracking";
-import { analyzeAggregates, periodRange, shiftPeriod, addDays, type Period } from "@/lib/statistics";
+import { analyzeAggregates, periodRange, previousRange, shiftPeriod, addDays, type Period, type SeriesPoint } from "@/lib/statistics";
+import { exportSummaryGraphic } from "@/lib/chart-export";
+import { analyzeEventDays } from "@/lib/event-analytics";
 import type { ChaxterEvent } from "@/lib/events";
-import { exportSummaryGraphic, exportSingleChartGraphic } from "@/lib/chart-export";
-
+import ComboChart from "./combo-chart";
 
 import { Accordion } from "./interior/accordion";
 import { SegmentedControl } from "./interior/segmented-control";
 import { Modal } from "./interior/modal";
 import { LoadingButton } from "./interior/loading-button";
 
-const PERIODS: { value: Period; label: string }[] = [
+type ViewPeriod = Exclude<Period, "all">;
+const PERIODS: { value: ViewPeriod; label: string }[] = [
   { value: "day", label: "Tag" },
   { value: "week", label: "Woche" },
   { value: "month", label: "Monat" },
   { value: "year", label: "Jahr" },
   { value: "custom", label: "Zeitraum" },
-  { value: "all", label: "Gesamt" },
 ];
 const number = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 });
+const percent = new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 0 });
+const change = new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 0, signDisplay: "exceptZero" });
 const shortDate = (day: string) =>
-  new Date(`${day}T12:00:00Z`).toLocaleDateString("de-DE", {
-    timeZone: "Europe/Berlin",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+  new Date(`${day}T12:00:00Z`).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", year: "numeric" });
+const share = (part: number, total: number) => (total ? part / total : 0);
 
-function rangeTitle(period: Period, anchor: string, customEnd?: string) {
-  if (period === "all") return "Alle gespeicherten Besuche";
-  if (period === "custom") {
-    if (!anchor || !customEnd) return "Eigener Zeitraum";
-    return `${shortDate(anchor)} – ${shortDate(customEnd)}`;
-  }
+function rangeTitle(period: ViewPeriod, anchor: string, customEnd?: string) {
+  if (period === "custom") return anchor && customEnd ? `${shortDate(anchor)} – ${shortDate(customEnd)}` : "Eigener Zeitraum";
   if (!anchor) return "Zeitraum wird geladen …";
-  const date = new Date(`${anchor}T12:00:00Z`);
   if (period === "day") return shortDate(anchor);
   if (period === "week") {
     const range = periodRange(period, anchor)!;
     return `${shortDate(range.start)} – ${shortDate(range.end)}`;
   }
   if (period === "year") return anchor.slice(0, 4);
-  return date.toLocaleDateString("de-DE", { timeZone: "Europe/Berlin", month: "long", year: "numeric" });
+  return new Date(`${anchor}T12:00:00Z`).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin", month: "long", year: "numeric" });
 }
 
-type Bar = { key: string; label: string; value: number; u15?: number; o15?: number; detail?: string };
-function Bars({ rows, label, stacked = false }: { rows: Bar[]; label: string; stacked?: boolean }) {
+type Bar = { key: string; label: string; u15: number; o15: number; value: number; detail?: string };
+// "count" draws bars against the largest row; "share" fills every row and shows how U15 and Ü15 split it.
+function Bars({ rows, label, mode = "count" }: { rows: Bar[]; label: string; mode?: "count" | "share" }) {
   const max = Math.max(1, ...rows.map((row) => row.value));
   return (
     <div className="analytics-bars" role="list" aria-label={label}>
-      {rows.map((row) => (
-        <div
-          key={row.key}
-          className="analytics-bar-row"
-          role="listitem"
-          aria-label={`${row.label}: ${number.format(row.value)}${row.detail ? `, ${row.detail}` : ""}`}
-        >
-          <span className="analytics-bar-label">{row.label}</span>
-          <span className="analytics-bar-track" aria-hidden="true">
-            <span className="analytics-bar-fill" style={{ width: `${(row.value / max) * 100}%` }}>
-              {stacked ? (
-                <>
-                  <span className="counter-blue" style={{ flex: row.u15 ?? 0 }} />
-                  <span className="counter-yellow" style={{ flex: row.o15 ?? 0 }} />
-                </>
-              ) : (
-                <span className="counter-blue" style={{ flex: 1 }} />
-              )}
+      {rows.map((row) => {
+        const total = row.u15 + row.o15;
+        const width = mode === "share" ? (total ? 100 : 0) : (row.value / max) * 100;
+        return (
+          <div key={row.key} className="analytics-bar-row" role="listitem"
+            aria-label={`${row.label}: ${number.format(row.value)}${row.detail ? `, ${row.detail}` : ""}${total ? `, ${percent.format(share(row.u15, total))} U15` : ""}`}>
+            <span className="analytics-bar-label">{row.label}</span>
+            <span className="analytics-bar-track" aria-hidden="true">
+              <span className="analytics-bar-fill" style={{ width: `${width}%` }}>
+                <span className="counter-blue" style={{ flex: row.u15 }} />
+                <span className="counter-yellow" style={{ flex: row.o15 }} />
+              </span>
             </span>
-          </span>
-          <span className="analytics-bar-value">{number.format(row.value)}</span>
-        </div>
-      ))}
+            <span className="analytics-bar-value">
+              {mode === "share"
+                ? (total ? <>{percent.format(share(row.u15, total))}<small className="bar-value-note"> U15</small></> : "–")
+                : number.format(row.value)}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function StatisticsSection({ title, description, children }: {
-  title: string; description: string; children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState<readonly string[]>([]);
-  return <Accordion className="statistics-accordion" headingLevel={2} maxPanelHeight={100000} open={open} onOpenChange={setOpen}
-    items={[{ id: "section", title: <span className="statistics-section-heading"><span>{title}</span><span>{description}</span></span>, content: open.includes("section") ? children : null }]} />;
+function Legend() {
+  return (
+    <div className="chart-legend" aria-hidden="true">
+      <span><i className="counter-blue" />U15</span>
+      <span><i className="counter-yellow" />Ü15</span>
+    </div>
+  );
 }
+
+function FoldedSection({ id, title, description, children }: { id?: string; title: string; description: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState<readonly string[]>([]);
+  useEffect(() => { if (id && window.location.hash === `#${id}`) setOpen(["section"]); }, [id]);
+  return <div id={id}><Accordion className="statistics-accordion" headingLevel={2} maxPanelHeight={100000} open={open} onOpenChange={setOpen}
+    items={[{ id: "section", title: <span className="statistics-section-heading"><span>{title}</span><span>{description}</span></span>, content: open.includes("section") ? children : null }]} /></div>;
+}
+
+const longDay = (day: string) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin", weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" });
+const monthName = (key: string) => new Date(`${key}-15T12:00:00Z`).toLocaleDateString("de-DE", { timeZone: "UTC", month: "long", year: "numeric" });
+const weekdayName = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("de-DE", { timeZone: "Europe/Berlin", weekday: "long" });
+
+function Highlight({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <article className="highlight-card">
+      <span className="meta">{label}</span>
+      <strong title={value}>{value}</strong>
+      <p>{detail}</p>
+    </article>
+  );
+}
+
+const peak = <T extends { u15: number; o15: number }>(rows: T[], group: "u15" | "o15") =>
+  rows.reduce<T | null>((best, row) => (row[group] > (best?.[group] ?? 0) ? row : best), null);
 
 export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
   const [anchor, setAnchor] = useState("");
+  const [today, setToday] = useState("");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
-  const [period, setPeriod] = useState<Period>("day");
+  const [period, setPeriod] = useState<ViewPeriod>("month");
+  const [ageMode, setAgeMode] = useState<"count" | "share">("count");
   const requestId = useRef(0);
   const [days, setDays] = useState<DailyAggregate[]>([]);
-  const [eventsList, setEventsList] = useState<ChaxterEvent[]>([]);
+  const [events, setEvents] = useState<ChaxterEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [error, setError] = useState(false);
 
-  // Download export state
   const [exportOpen, setExportOpen] = useState(false);
   const [exportFrom, setExportFrom] = useState("");
   const [exportTo, setExportTo] = useState("");
 
   useEffect(() => {
-    const today = dayKey(); setAnchor(today); setCustomEnd(today); setCustomStart(addDays(today, -29));
+    const now = dayKey(); setToday(now); setAnchor(now); setCustomEnd(now); setCustomStart(addDays(now, -29));
   }, []);
 
   const activeAnchor = period === "custom" ? (customStart || "2000-01-01") : (anchor || "2000-01-01");
   const activeCustomEnd = period === "custom" ? (customEnd || anchor || "2099-12-31") : undefined;
+  const range = useMemo(() => periodRange(period, activeAnchor, activeCustomEnd)!, [period, activeAnchor, activeCustomEnd]);
+  const previous = useMemo(() => previousRange(period, activeAnchor, activeCustomEnd, today || undefined)!, [period, activeAnchor, activeCustomEnd, today]);
 
-  const range = useMemo(() => periodRange(period, activeAnchor, activeCustomEnd), [period, activeAnchor, activeCustomEnd]);
+  // One request covers the period, the period it is compared with, and (for a day) its week.
   const load = useCallback(async () => {
     const id = ++requestId.current;
     setLoaded(false);
     try {
-      const week = period === "day" ? periodRange("week", activeAnchor) : range;
-      const result = await listDays(week?.start, week?.end);
-      if (id === requestId.current) { setDays(result); setError(false); setLoaded(true); setLoadedAt(new Date()); }
+      const week = periodRange("week", activeAnchor)!;
+      const from = [range.start, previous.start, period === "day" ? week.start : range.start].sort()[0];
+      const to = [range.end, period === "day" ? week.end : range.end].sort()[1];
+      const [result, periodEvents] = await Promise.all([listDays(from, to), listEvents(range.start, range.end)]);
+      if (id === requestId.current) { setDays(result); setEvents(periodEvents); setError(false); setLoaded(true); setLoadedAt(new Date()); }
     } catch { if (id === requestId.current) setError(true); }
-  }, [range, period, activeAnchor]);
+  }, [range, previous, period, activeAnchor]);
   useEffect(() => { if (anchor) void load(); }, [load, anchor]);
+
   const stats = useMemo(() => analyzeAggregates(days, period, activeAnchor, activeCustomEnd), [days, period, activeAnchor, activeCustomEnd]);
+  const before = useMemo(() => analyzeAggregates(days, "custom", previous.start, previous.end), [days, previous]);
   const weekStats = useMemo(() => analyzeAggregates(days, "week", activeAnchor), [days, activeAnchor]);
+  // Highlights for the chosen period: the busiest event day, the busiest day and, for a year, the busiest month.
+  const bestEvent = useMemo(() => analyzeEventDays(events.filter((e) => e.date >= range.start && e.date <= range.end), days)
+    .eventDays.filter((day) => day.total > 0).sort((a, b) => b.total - a.total || b.date.localeCompare(a.date))[0] ?? null, [events, days, range]);
+  const bestDay = stats.topDays.find((day) => day.total > 0) ?? null;
+  const bestDayEvents = bestDay ? events.filter((e) => e.date === bestDay.key) : [];
+  const bestMonth = stats.unit === "month" ? stats.series.reduce<SeriesPoint | null>((best, month) => (month.total > (best?.total ?? 0) ? month : best), null) : null;
+  const bestMonthDays = bestMonth ? stats.topDays.filter((day) => day.key.startsWith(bestMonth.key) && day.total > 0).length : 0;
+  const chartPoints = useMemo(() => stats.series.map((item) => ({
+    ...item,
+    title: stats.unit === "day" ? longDay(item.key) : stats.unit === "month" ? monthName(item.key) : item.label,
+    future: Boolean(today) && item.key > today.slice(0, item.key.length),
+  })), [stats.series, stats.unit, today]);
 
-  const eventsMap = useMemo(() => {
-    const map = new Map<string, ChaxterEvent>();
-    for (const ev of eventsList) {
-      map.set(ev.date, ev);
-    }
-    return map;
-  }, [eventsList]);
+  const change_ = before.total ? stats.total / before.total - 1 : null;
 
-  const bestWeekday = stats.bestWeekdays[0];
-  const bestDay = stats.bestDays[0];
-  const bestDayEvent = bestDay ? eventsMap.get(bestDay.key) : undefined;
-  const unitLabel = { hour: "Tage", day: "Tage", month: "Monate", year: "Jahre" }[stats.unit];
   const unitCaption = { hour: "Tag", day: "Tag", month: "Monat", year: "Jahr" }[stats.unit];
-
   const currentDisplayTitle = rangeTitle(period, activeAnchor, activeCustomEnd);
   const invalidExportRange = Boolean(exportFrom && exportTo && exportFrom > exportTo);
 
@@ -152,18 +176,13 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
     const params = new URLSearchParams({ format });
     if (exportFrom) params.set("from", exportFrom);
     if (exportTo) params.set("to", exportTo);
-
     const response = await fetch(`/api/admin/export?${params.toString()}`);
-    if (!response.ok) {
-      throw new Error("Export fehlgeschlagen");
-    }
+    if (!response.ok) throw new Error("Export fehlgeschlagen");
     const blob = await response.blob();
     const disposition = response.headers.get("Content-Disposition");
     let filename = `chaxterlog-${format}${exportFrom ? `-${exportFrom}` : ""}${exportTo ? `-bis-${exportTo}` : ""}.${format === "json" ? "json" : "csv"}`;
-    if (disposition && disposition.includes("filename=")) {
-      const match = disposition.match(/filename="?([^";]+)"?/);
-      if (match?.[1]) filename = match[1];
-    }
+    const match = disposition?.match(/filename="?([^";]+)"?/);
+    if (match?.[1]) filename = match[1];
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -174,58 +193,42 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  // Determine rows for Verlauf: always daily / monthly / yearly, NEVER hours
-  const trendRows = useMemo(() => {
-    if (period === "day") {
-      return weekStats.series.map((item) => ({
-        ...item,
-        label: item.key === anchor ? `${item.label} (Dieser Tag)` : item.label,
-        value: item.total,
-        detail: `U15 ${item.u15}, Ü15 ${item.o15}`,
-      }));
-    }
-    return stats.series.map((item) => ({
-      ...item,
-      value: item.total,
-      detail: `U15 ${item.u15}, Ü15 ${item.o15}`,
-    }));
-  }, [period, anchor, weekStats.series, stats.series]);
+  // Verlauf: a day is shown within its week; other periods by day, month or year.
+  const trendRows = useMemo(() => (period === "day" ? weekStats.series : stats.series).map((item) => ({
+    ...item,
+    label: period === "day" && item.key === anchor ? `${item.label} (gewählt)` : item.label,
+    value: item.total,
+    detail: `U15 ${item.u15}, Ü15 ${item.o15}`,
+  })), [period, anchor, weekStats.series, stats.series]);
 
-  const maxTopDay = useMemo(() => Math.max(1, ...(stats.topDays?.map((d) => d.total) ?? [1])), [stats.topDays]);
+  const weekdayRows = useMemo(() => stats.weekdays.filter((day) => day.days > 0).map((day) => ({
+    ...day,
+    u15: day.u15 / day.days,
+    o15: day.o15 / day.days,
+    value: day.average,
+    detail: `${day.days} ${day.days === 1 ? "Öffnungstag" : "Öffnungstage"}`,
+  })), [stats.weekdays]);
+  const dayU15 = peak(weekdayRows, "u15"), dayO15 = peak(weekdayRows, "o15");
 
   return (
     <main className="statistics-screen">
       <header className="manage-header statistics-header">
         <Link className="back-link" href="/">
-          ← Zählung
+          <span className="back-arrow" aria-hidden="true">←</span> Zählung
         </Link>
         <h1>Statistik</h1>
         <div className="statistics-header-right">
-          <button
-            type="button"
-            className="statistics-export-btn"
-            aria-label="Daten & Grafiken herunterladen"
-            title="Daten & Grafiken herunterladen"
-            onClick={() => {
-              if (range) {
-                setExportFrom(range.start);
-                setExportTo(range.end);
-              }
-              setExportOpen(true);
-            }}
-          >
+          <button type="button" className="icon-button statistics-export-btn" aria-label="Daten & Grafiken herunterladen" title="Daten & Grafiken herunterladen"
+            onClick={() => { setExportFrom(range.start); setExportTo(range.end); setExportOpen(true); }}>
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 3v12m-5-5 5 5 5-5M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
             </svg>
           </button>
-          <div className="account-brand">
-            <ChaxterLogo />
-          </div>
-          <span className="analytics-basis" title="Zeitpunkt, zu dem die Werte geladen wurden">{loaded && loadedAt ? `Stand ${loadedAt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}` : "Lädt …"}</span>
+          <span className="meta" title="Zeitpunkt, zu dem die Werte geladen wurden">{loaded && loadedAt ? `Stand ${loadedAt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}` : "Lädt …"}</span>
         </div>
       </header>
 
-      <SegmentedControl className="period-switch" label="Zeitraum" options={PERIODS} value={period} onValueChange={(value) => setPeriod(value as Period)} />
+      <SegmentedControl className="period-switch" label="Zeitraum" options={PERIODS} value={period} onValueChange={(value) => setPeriod(value as ViewPeriod)} />
 
       <div className="period-navigation">
         <h2 aria-live="polite">{currentDisplayTitle}</h2>
@@ -233,74 +236,27 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
           <div className="period-custom-controls">
             <label className="period-custom-field">
               <span>Von</span>
-              <input
-                type="date"
-                value={customStart}
-                max={customEnd || undefined}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (!value) return;
-                  setCustomStart(value);
-                  if (customEnd && value > customEnd) setCustomEnd(value);
-                }}
-                className="date-input"
-              />
+              <input type="date" value={customStart} max={customEnd || undefined}
+                onChange={(event) => { const value = event.target.value; if (!value) return; setCustomStart(value); if (customEnd && value > customEnd) setCustomEnd(value); }} />
             </label>
             <label className="period-custom-field">
               <span>Bis</span>
-              <input
-                type="date"
-                value={customEnd}
-                min={customStart || undefined}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (!value) return;
-                  setCustomEnd(value);
-                  if (customStart && value < customStart) setCustomStart(value);
-                }}
-                className="date-input"
-              />
+              <input type="date" value={customEnd} min={customStart || undefined}
+                onChange={(event) => { const value = event.target.value; if (!value) return; setCustomEnd(value); if (customStart && value < customStart) setCustomStart(value); }} />
             </label>
           </div>
-        ) : period !== "all" ? (
+        ) : (
           <div className="period-controls">
-            <button
-              type="button"
-              className="period-arrow"
-              aria-label="Vorheriger Zeitraum"
-              disabled={!anchor}
-              onClick={() => setAnchor(shiftPeriod(period, anchor, -1))}
-            >
-              ←
-            </button>
-            <input
-              type="date"
-              aria-label="Datum im Zeitraum"
-              value={anchor}
-              onChange={(event) => {
-                if (event.target.value) setAnchor(event.target.value);
-              }}
-              className="date-input"
-            />
-            <button
-              type="button"
-              className="period-arrow"
-              aria-label="Nächster Zeitraum"
-              disabled={!anchor}
-              onClick={() => setAnchor(shiftPeriod(period, anchor, 1))}
-            >
-              →
-            </button>
+            <button type="button" className="period-arrow" aria-label="Vorheriger Zeitraum" disabled={!anchor} onClick={() => setAnchor(shiftPeriod(period, anchor, -1))}>←</button>
+            <input type="date" aria-label="Datum im Zeitraum" value={anchor} onChange={(event) => { if (event.target.value) setAnchor(event.target.value); }} />
+            <button type="button" className="period-arrow" aria-label="Nächster Zeitraum" disabled={!anchor} onClick={() => setAnchor(shiftPeriod(period, anchor, 1))}>→</button>
           </div>
-        ) : null}
+        )}
       </div>
 
       {error ? (
         <p role="alert" className="error-message">
-          Daten konnten nicht geladen werden.{" "}
-          <button className="underline" onClick={load}>
-            Erneut versuchen
-          </button>
+          Daten konnten nicht geladen werden. <button onClick={load}>Erneut versuchen</button>
         </p>
       ) : (
         <>
@@ -308,210 +264,86 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
             <div className="counter-blue">
               <span>U15</span>
               <strong>{loaded ? number.format(stats.counts.u15) : "–"}</strong>
+              <small>{loaded && stats.total ? `${percent.format(share(stats.counts.u15, stats.total))} der Besuche` : "\u00a0"}</small>
             </div>
             <div className="counter-yellow">
               <span>Ü15</span>
               <strong>{loaded ? number.format(stats.counts.o15) : "–"}</strong>
+              <small>{loaded && stats.total ? `${percent.format(share(stats.counts.o15, stats.total))} der Besuche` : "\u00a0"}</small>
             </div>
             <div className="statistics-total">
               <span>Gesamt</span>
               <strong>{loaded ? number.format(stats.total) : "–"}</strong>
+              <small className="total-change" data-tone={change_ === null ? "none" : change_ > 0.02 ? "up" : change_ < -0.02 ? "down" : "flat"}
+                title={`Verglichen mit ${shortDate(previous.start)}${previous.end !== previous.start ? ` – ${shortDate(previous.end)}` : ""}`}>
+                {!loaded ? "\u00a0" : change_ === null ? `${previous.label}: keine Besuche` : `${change.format(change_)} gegenüber ${previous.label}`}
+              </small>
             </div>
           </section>
 
-          <p className="analytics-basis">
-            {loaded
-              ? `${stats.recordedDays} ${stats.recordedDays === 1 ? "erfasster Tag" : "erfasste Tage"} · Ø ${number.format(stats.average)} Besuche pro erfasstem Tag`
-              : "Daten werden geladen …"}
-          </p>
-
-          {loaded && stats.recordedDays > 0 && stats.recordedDays < 7 && <p className="analytics-note">Erste Tendenz: weniger als sieben erfasste Tage.</p>}
+          {loaded && (stats.recordedDays > 0 || stats.undated.total > 0) && (
+            <p className="statistics-summary">
+              {period !== "day" && <span>{stats.recordedDays} {stats.recordedDays === 1 ? "Öffnungstag" : "Öffnungstage"} · Ø {number.format(stats.average)} Besuche pro Tag</span>}
+              {stats.undated.total > 0 && <span>{stats.undated.total} nachgetragen, ohne Uhrzeit</span>}
+            </p>
+          )}
+          {loaded && period !== "day" && stats.recordedDays > 0 && stats.recordedDays < 7 && <p className="analytics-note">Erste Tendenz: weniger als sieben Öffnungstage.</p>}
 
           {loaded && stats.total > 0 && (
             <>
-              <StatisticsSection title="Kennzahlen" description="Rekorde, Durchschnitt und stärkster Wochentag">
-                <section className="insight-grid" aria-label="Auswertung des Zeitraums">
-                  <article className="analytics-panel insight-card">
-                    <h3>Stärkster Wochentag</h3>
-                    <strong>{stats.bestWeekdays.length > 1 ? "Gleichstand" : bestWeekday?.label ?? "–"}</strong>
-                    <p>
-                      {stats.bestWeekdays.length > 1
-                        ? `${stats.bestWeekdays.map((day) => day.label).join(", ")} · `
-                        : ""}
-                      Ø {number.format(bestWeekday?.average ?? 0)} Besuche je erfasstem Wochentag
-                    </p>
-                  </article>
-                  <article className="analytics-panel insight-card">
-                    <h3>Bester Tag (Rekord)</h3>
-                    <strong>
-                      {stats.bestDays.length === 1
-                        ? shortDate(bestDay.key)
-                        : stats.bestDays.length > 1
-                        ? `${stats.bestDays.length} Rekordtage`
-                        : "–"}
-                    </strong>
-                    <p>
-                      {stats.bestDays.length > 0
-                        ? `${number.format(bestDay?.total ?? 0)} Besuche ${bestDayEvent ? `· 🎉 ${bestDayEvent.title}` : "(Höchstwert)"}`
-                        : "Keine Besuche"}
-                    </p>
-                  </article>
-                  <article className="analytics-panel insight-card">
-                    <h3>Ø Besuche pro Tag</h3>
-                    <strong>{number.format(stats.average)} Besuche</strong>
-                    <p>
-                      Durchschnitt an allen {stats.recordedDays} erfassten Tagen
-                    </p>
-                  </article>
+              {period !== "day" && (
+                <section className={`highlight-grid ${bestMonth ? "has-three" : ""}`} aria-label="Höhepunkte im Zeitraum">
+                  <Highlight label="Bestes Event"
+                    value={bestEvent ? bestEvent.events.map((e) => e.title).join(" + ") : "Kein Event"}
+                    detail={bestEvent
+                      ? `${longDay(bestEvent.date)} · ${number.format(bestEvent.total)} Besuche${bestEvent.uplift !== null ? ` · ${change.format(bestEvent.uplift)} gegenüber einem normalen ${weekdayName(bestEvent.date)}` : ""}`
+                      : events.length ? "An den Event-Tagen wurden keine Besuche gezählt." : "In diesem Zeitraum ist kein Event eingetragen."} />
+                  <Highlight label="Bester Tag"
+                    value={bestDay ? longDay(bestDay.key) : "–"}
+                    detail={bestDay ? `${number.format(bestDay.total)} Besuche · U15 ${number.format(bestDay.u15)}, Ü15 ${number.format(bestDay.o15)}${bestDayEvents.length ? ` · Event: ${bestDayEvents.map((e) => e.title).join(" + ")}` : ""}` : ""} />
+                  {bestMonth && (
+                    <Highlight label="Bester Monat"
+                      value={monthName(bestMonth.key)}
+                      detail={`${number.format(bestMonth.total)} Besuche · Ø ${number.format(bestMonthDays ? bestMonth.total / bestMonthDays : 0)} pro Öffnungstag`} />
+                  )}
                 </section>
-              </StatisticsSection>
+              )}
 
-              <StatisticsSection title="Besuchsverlauf" description="Entwicklung der Besuche im gewählten Zeitraum">
-                <section className="analytics-panel trend-panel" aria-label="Besuchsverlauf">
+              {period !== "day" && (
+                <section className="analytics-panel statistics-panel" aria-label="Besuche im Zeitraum">
                   <div className="analytics-panel-heading">
                     <div>
-                      <h3>Verlauf</h3>
-                      <p>Besuche pro {unitCaption}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        className="chart-download-btn"
-                        title="Verlaufsdiagramm als PNG herunterladen"
-                        aria-label="Verlaufsdiagramm als PNG herunterladen"
-                        onClick={() =>
-                          exportSingleChartGraphic(
-                            "Besuchsverlauf",
-                            currentDisplayTitle,
-                            trendRows,
-                            `besuchsverlauf-${range?.start ?? "zeitraum"}.png`,
-                            true
-                          )
-                        }
-                      >
-                        <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                        Grafik (PNG)
-                      </button>
-                      <div className="chart-legend">
-                        <span>
-                          <i className="counter-blue" />
-                          U15
-                        </span>
-                        <span>
-                          <i className="counter-yellow" />
-                          Ü15
-                        </span>
-                      </div>
+                      <h3>Besuche pro {unitCaption}</h3>
+                      <p>Säulen: alle Besuche. Linien: U15 und Ü15. Antippen zeigt die Werte.</p>
                     </div>
                   </div>
-                  <Bars
-                    stacked
-                    label={`Besuche nach ${unitLabel}`}
-                    rows={trendRows}
-                  />
+                  <ComboChart label={`Besuche pro ${unitCaption}, ${currentDisplayTitle}`} points={chartPoints} />
                 </section>
-              </StatisticsSection>
+              )}
 
-              <StatisticsSection title="Stundenverteilung" description="Besuche nach Berliner Uhrzeit im gewählten Zeitraum">
-                <section className="analytics-panel"><Bars stacked label="Besuche nach Stunde" rows={stats.hours.map((hour) => ({ ...hour, value: hour.total, detail: `U15 ${hour.u15}, Ü15 ${hour.o15}` }))} /></section>
-              </StatisticsSection>
-
-              <StatisticsSection title="Wochentage & beste Tage" description="Wochentagsvergleich und Rangliste der Besuchstage">
-                <div className="analytics-chart-grid">
-                  <section className="analytics-panel">
+              {period !== "day" && (
+                <FoldedSection title="Wochentage" description="An welchem Tag kommt welches Alter?">
+                  <section className="age-section" aria-label="Besuche nach Wochentag">
                     <div className="analytics-panel-heading">
-                      <div>
-                        <h3>Wochentage</h3>
-                        <p>Ø Besuche pro erfasstem Wochentag</p>
-                      </div>
-                      <button
-                        type="button"
-                        className="chart-download-btn"
-                        title="Wochentage-Diagramm als PNG herunterladen"
-                        aria-label="Wochentage-Diagramm als PNG herunterladen"
-                        onClick={() =>
-                          exportSingleChartGraphic(
-                            "Wochentagsvergleich (Durchschnitt)",
-                            currentDisplayTitle,
-                            stats.weekdays.map((w) => ({ label: w.label, value: w.average, detail: `${w.days} ${w.days === 1 ? "erfasster Tag" : "erfasste Tage"}` })),
-                            `wochentage-${range?.start ?? "zeitraum"}.png`,
-                            false
-                          )
-                        }
-                      >
-                        <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-                        Grafik (PNG)
-                      </button>
+                      <p>
+                        {dayU15 && <>U15 kommen am häufigsten {dayU15.label.toLowerCase()}s. </>}
+                        {dayO15 && <>Ü15 kommen am häufigsten {dayO15.label.toLowerCase()}s.</>}
+                      </p>
+                      <SegmentedControl className="age-mode-switch" label="Darstellung" value={ageMode} onValueChange={(value) => setAgeMode(value as "count" | "share")}
+                        options={[{ value: "count", label: "Anzahl" }, { value: "share", label: "Anteil" }]} />
                     </div>
-                    <Bars
-                      label="Durchschnitt nach Wochentag"
-                      rows={stats.weekdays.map((item) => ({
-                        ...item,
-                        value: item.average,
-                        detail: `${item.days} ${item.days === 1 ? "erfasster Tag" : "erfasste Tage"}, ${item.total} ${item.total === 1 ? "Besuch" : "Besuche"}`,
-                      }))}
-                    />
+                    <h4 className="chart-title">{ageMode === "count" ? "Ø Besuche pro Öffnungstag" : "Anteil U15"}</h4>
+                    <Bars mode={ageMode} label="Besuche nach Wochentag" rows={weekdayRows} />
+                    <Legend />
                   </section>
-                  <section className="analytics-panel">
-                    <div className="analytics-panel-heading">
-                      <div>
-                        <h3>Beste Besuchstage</h3>
-                        <p>Höchste Besucherzahlen im Zeitraum</p>
-                      </div>
-                    </div>
-                    {stats.topDays && (
-                      <div className="analytics-bars" role="list" aria-label="Beste Besuchstage">
-                        {stats.topDays.map((dayItem, index) => {
-                          const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`;
-                          const eventOnDay = eventsMap.get(dayItem.key);
-                          return (
-                            <div
-                              key={dayItem.key}
-                              className="analytics-bar-row"
-                              role="listitem"
-                              aria-label={`${index + 1}. Platz: ${shortDate(dayItem.key)}, ${number.format(dayItem.total)} Besuche`}
-                            >
-                              <span className="analytics-bar-label flex items-center gap-1.5">
-                                <span className="font-semibold">{medal}</span>
-                                <span>{shortDate(dayItem.key)}</span>
-                                {eventOnDay && (
-                                  <span className="best-day-event-tag" title={eventOnDay.title}>
-                                    🎉 {eventOnDay.title}
-                                  </span>
-                                )}
-                              </span>
-                              <span className="analytics-bar-track" aria-hidden="true">
-                                <span
-                                  className="analytics-bar-fill"
-                                  style={{ width: `${(dayItem.total / maxTopDay) * 100}%` }}
-                                >
-                                  <span className="counter-blue" style={{ flex: dayItem.u15 }} />
-                                  <span className="counter-yellow" style={{ flex: dayItem.o15 }} />
-                                </span>
-                              </span>
-                              <span className="analytics-bar-value">{number.format(dayItem.total)}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </section>
-                </div>
-              </StatisticsSection>
+                </FoldedSection>
+              )}
             </>
           )}
 
-          <StatisticsSection title="Event-Auswertung" description="Besuche bei einzelnen Events und Event-Kategorien">
-            <EventAnalytics onSelectDay={(d) => { setPeriod("day"); setAnchor(d); }} />
-          </StatisticsSection>
-          <div id="events">
-            <StatisticsSection title="Events verwalten" description="Events eintragen, bearbeiten oder importieren">
-              <EventsManager highlightDate={anchor} onEventsChange={setEventsList} />
-            </StatisticsSection>
-          </div>
-          <StatisticsSection title="Aktivitätsprotokoll" description="Einzelne Besuche und Undo-/Redo-Korrekturen">
-            <RemoteActivity range={range} />
-          </StatisticsSection>
+          <FoldedSection title="Event-Auswertung" description="Bringen Events mehr Besucher als ein normaler Tag?">
+            <EventAnalytics onSelectDay={(d) => { setPeriod("day"); setAnchor(d); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
+          </FoldedSection>
         </>
       )}
 
@@ -519,103 +351,33 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
         open={exportOpen}
         onClose={() => setExportOpen(false)}
         title="Daten & Grafiken herunterladen"
-        description={isAdmin ? "CSV-, JSON- und Bild-Exporte der Auswertungen und Besuchsdaten." : "Bild-Exporte der Auswertungen. Rohdaten (CSV/JSON) kann nur der Admin herunterladen."}
+        description={isAdmin ? "Tabellen für Berichte, eine Sicherung aller Besuche und eine Grafik." : "Grafik der Auswertung. Tabellen (CSV/JSON) kann nur der Admin herunterladen."}
         maxWidth={500}
       >
         <div className="download-modal-body">
           <div className="form-row">
-            <label>
-              Von
-              <input
-                type="date"
-                value={exportFrom}
-                onChange={(e) => setExportFrom(e.target.value)}
-              />
-            </label>
-            <label>
-              Bis
-              <input
-                type="date"
-                value={exportTo}
-                onChange={(e) => setExportTo(e.target.value)}
-              />
-            </label>
+            <label>Von<input type="date" value={exportFrom} onChange={(e) => setExportFrom(e.target.value)} /></label>
+            <label>Bis<input type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)} /></label>
           </div>
-
           <div className="download-preset-chips">
-            <button
-              type="button"
-              className="download-chip"
-              onClick={() => {
-                if (range) {
-                  setExportFrom(range.start);
-                  setExportTo(range.end);
-                }
-              }}
-            >
-              Gewählter Zeitraum ({currentDisplayTitle})
-            </button>
-            <button
-              type="button"
-              className="download-chip"
-              onClick={() => {
-                setExportFrom("");
-                setExportTo("");
-              }}
-            >
-              Gesamter Datenbestand
-            </button>
+            <button type="button" className="download-chip" onClick={() => { setExportFrom(range.start); setExportTo(range.end); }}>Gewählter Zeitraum ({currentDisplayTitle})</button>
+            <button type="button" className="download-chip" onClick={() => { setExportFrom(""); setExportTo(""); }}>Alle Daten</button>
           </div>
 
           {invalidExportRange ? (
-            <p role="alert" className="error-message">
-              Das Enddatum liegt vor dem Anfangsdatum.
-            </p>
+            <p role="alert" className="error-message">Das Enddatum liegt vor dem Anfangsdatum.</p>
           ) : (
             <>
               {isAdmin && <>
-              <div className="download-section-heading">CSV- &amp; JSON-Exporte</div>
-              <div className="button-row download-button-group">
-                <LoadingButton
-                  className="primary-button"
-                  onAction={() => handleDownload("csv")}
-                  pendingLabel="Erstelle CSV …"
-                  successLabel="Heruntergeladen"
-                  errorLabel="Fehlgeschlagen"
-                >
-                  Einzelbesuche · CSV
-                </LoadingButton>
-                <LoadingButton
-                  className="secondary-button"
-                  onAction={() => handleDownload("daily")}
-                  pendingLabel="Erstelle CSV …"
-                  successLabel="Heruntergeladen"
-                  errorLabel="Fehlgeschlagen"
-                >
-                  Tageswerte · CSV
-                </LoadingButton>
-                <LoadingButton
-                  className="secondary-button"
-                  onAction={() => handleDownload("corrections")}
-                  pendingLabel="Erstelle CSV …"
-                  successLabel="Heruntergeladen"
-                  errorLabel="Fehlgeschlagen"
-                >
-                  Undo &amp; Redo · CSV
-                </LoadingButton>
-                <LoadingButton
-                  className="secondary-button"
-                  onAction={() => handleDownload("json")}
-                  pendingLabel="Erstelle JSON …"
-                  successLabel="Heruntergeladen"
-                  errorLabel="Fehlgeschlagen"
-                >
-                  Alle Details · JSON
-                </LoadingButton>
-              </div>
-
+                <div className="download-section-heading meta">Tabellen (CSV, z. B. für Excel)</div>
+                <div className="button-row download-button-group">
+                  <LoadingButton className="primary-button" onAction={() => handleDownload("monthly")} pendingLabel="Erstelle CSV …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Monatswerte</LoadingButton>
+                  <LoadingButton className="secondary-button" onAction={() => handleDownload("daily")} pendingLabel="Erstelle CSV …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Tageswerte</LoadingButton>
+                  <LoadingButton className="secondary-button" onAction={() => handleDownload("csv")} pendingLabel="Erstelle CSV …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Einzelbesuche</LoadingButton>
+                  <LoadingButton className="secondary-button" onAction={() => handleDownload("json")} pendingLabel="Erstelle JSON …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Sicherung (JSON)</LoadingButton>
+                </div>
               </>}
-              <div className="download-section-heading" style={{ marginTop: 12 }}>Grafik-Export</div>
+              <div className="download-section-heading meta">Grafik</div>
               <div className="button-row">
                 <LoadingButton
                   className="secondary-button w-full"
@@ -630,13 +392,13 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
                       trendUnitCaption: unitCaption,
                       weekdays: stats.weekdays,
                       topDays: stats.topDays?.map((d) => ({ key: d.key, total: d.total, u15: d.u15, o15: d.o15 })),
-                    }, `chaxterlog-grafik-${exportFrom || range?.start || "zeitraum"}.png`);
+                    }, `chaxterlog-grafik-${range.start}.png`);
                   }}
                   pendingLabel="Erstelle Grafik …"
                   successLabel="Heruntergeladen"
                   errorLabel="Fehlgeschlagen"
                 >
-                  Statistik-Grafik (PNG) · Infografik
+                  Statistik-Grafik (PNG)
                 </LoadingButton>
               </div>
             </>

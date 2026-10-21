@@ -6,7 +6,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 
-const CELL = { type: "spring", stiffness: 520, damping: 34, mass: 0.45 } as const;
 const CROSSFADE = { type: "spring", stiffness: 260, damping: 34, mass: 0.8 } as const;
 const INSTANT = { duration: 0 } as const;
 
@@ -227,39 +226,37 @@ export function LoadingButton({
     {
       key: "idle",
       text: children,
-      tone: "text-neutral-700 dark:text-neutral-200",
+      tone: "",
       icon: null,
     },
     {
       key: "pending",
       text: pendingLabel,
-      tone: "text-neutral-500 dark:text-neutral-400",
+      tone: "",
       icon: <Spinner still={reduced === true || status !== "pending"} />,
     },
     {
       key: "success",
       text: successLabel,
-      tone: "text-emerald-600 dark:text-emerald-400",
+      tone: "",
       icon: <CheckMark />,
     },
     {
       key: "error",
       text: errorLabel,
-      tone: "text-red-600 dark:text-red-400",
+      tone: "",
       icon: <AlertMark />,
     },
   ];
 
   return (
     <>
-      <motion.button
+      <button
         type={type}
         disabled={disabled || pending}
         aria-label={label}
         aria-busy={pending || undefined}
         aria-disabled={pending || undefined}
-        whileTap={disabled || pending || reduced ? undefined : { y: 1 }}
-        transition={CELL}
         onClick={(event) => {
           if (pending) {
             event.preventDefault();
@@ -268,8 +265,8 @@ export function LoadingButton({
           onClick?.(event);
           if (onAction && !event.defaultPrevented) run();
         }}
-        className={`relative inline-flex h-9 select-none items-center justify-center rounded-[9px] bg-white px-3.5 text-[13px] font-medium text-neutral-700 shadow-[0_0_0_1px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.06)] outline-none transition-[filter] duration-150 hover:brightness-[0.98] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-[#4568FF] disabled:opacity-50 dark:bg-[#282828] dark:text-neutral-200 dark:shadow-[0_0_0_1px_#202020,0_1px_2px_rgba(0,0,0,0.25)] dark:hover:brightness-110 interior-action ${className}`}
-        style={{ borderRadius: 9, touchAction: "manipulation" }}
+        className={`interior-action ${/(primary|secondary|danger)-button/.test(className) ? "" : "primary-button "}${className}`}
+        style={{ touchAction: "manipulation" }}
       >
         <span aria-hidden className="relative grid place-items-center">
           {faces.map((face) => (
@@ -292,7 +289,7 @@ export function LoadingButton({
         <span role="status" aria-live="polite" className="sr-only">
           {status === "success" ? successLabel : status === "error" ? errorLabel : ""}
         </span>
-      </motion.button>
+      </button>
     </>
   );
 }

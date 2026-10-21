@@ -8,10 +8,12 @@ import { authClient } from "@/lib/auth-client";
 import { FloatingLabelInput } from "./interior/floating-label";
 import ChaxterLogo from "./chaxter-logo";
 import { LoadingButton } from "./interior/loading-button";
+import QrScanner from "./qr-scanner";
 
 export default function LoginForm({ setup = false }: { setup?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [scanning, setScanning] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -52,9 +54,10 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
     <main className="auth-screen">
       <div className="auth-card">
         <div className="auth-logo-wrap">
-          <ChaxterLogo />
+          <ChaxterLogo priority />
         </div>
         <h1>{setup ? "Admin einrichten" : "Anmelden"}</h1>
+        <p className="auth-subtitle">{setup ? "Einmalig: Passwort für den Admin-Zugang festlegen." : "Besucherzählung im Schülercafé Grafing"}</p>
         <form onSubmit={submit}>
           <FloatingLabelInput label="Benutzername"
               name="username"
@@ -98,6 +101,16 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
             {setup ? "Admin-Zugang erstellen" : "Anmelden"}
           </LoadingButton>
         </form>
+        {!setup && (
+          <>
+            <div className="auth-divider" aria-hidden="true"><span>oder</span></div>
+            <button type="button" className="secondary-button qr-login-button" onClick={() => setScanning(true)}>
+              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3" /><path d="M8 8h3v3H8zM13 13h3v3h-3zM13 8h3M8 13v3" /></svg>
+              Mit QR-Code anmelden
+            </button>
+            <QrScanner open={scanning} onClose={() => setScanning(false)} />
+          </>
+        )}
       </div>
     </main>
   );

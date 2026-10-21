@@ -202,7 +202,7 @@ export function FloatingLabelInput({
                 ? "shadow-[0_1px_2px_rgba(0,0,0,0.10),0_0_0_2px_#ef4444] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_0_0_2px_#f87171]"
                 : "shadow-[0_1px_2px_rgba(0,0,0,0.10),0_0_0_1px_#ef4444] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_0_0_1px_#f87171]"
               : focused
-                ? "shadow-[0_1px_2px_rgba(0,0,0,0.10),0_0_0_2px_#4568FF] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_0_0_2px_#4568FF]"
+                ? "shadow-[0_1px_2px_rgba(0,0,0,0.10),0_0_0_2px_var(--accent)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_0_0_2px_var(--accent)]"
                 : "shadow-[0_1px_2px_rgba(0,0,0,0.10),0_0_0_1px_rgba(0,0,0,0.17)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_0_0_1px_rgba(255,255,255,0.12)]"
           } ${disabled ? "opacity-55" : ""}`}
         >
@@ -269,10 +269,10 @@ export function FloatingLabelInput({
         </motion.label>
       </div>
 
-      <div className="mt-1.5 flex h-[16px] items-start gap-3">
+      <div className="mt-1.5 flex min-h-[16px] items-start gap-3">
         <p
           aria-hidden
-          className={`min-w-0 flex-1 truncate text-[11.5px] leading-[16px] ${
+          className={`min-w-0 flex-1 text-[12px] leading-[16px] ${
             invalid
               ? "text-red-600 dark:text-red-400"
               : "text-neutral-500 dark:text-neutral-400"
@@ -281,7 +281,8 @@ export function FloatingLabelInput({
           {hint}
         </p>
 
-        {maxLength !== undefined ? (
+        {/* The count only appears once the limit is close enough to matter. */}
+        {maxLength !== undefined && length >= maxLength * 0.8 ? (
           <span
             aria-hidden
             className="grid shrink-0 justify-items-end font-mono text-[10.5px] leading-[16px] tabular-nums text-neutral-400 dark:text-neutral-500"

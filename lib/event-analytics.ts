@@ -1,161 +1,63 @@
-import { dayKey, type TrackEvent } from "./tracking.ts";
 import type { ChaxterEvent } from "./events.ts";
 
-export type EventWithStats = ChaxterEvent & {
-  total: number;
+type DayTotals = { date: string; u15: number; o15: number };
+
+export type EventDay = {
+  date: string;
+  events: ChaxterEvent[];
   u15: number;
   o15: number;
+  total: number;
+  // Average of comparable normal days: same weekday, no event, café open, within ±8 weeks.
+  baseline: { u15: number; o15: number; total: number; days: number } | null;
+  // Relative difference to the baseline, e.g. 0.35 for +35 %; null without a comparison.
+  uplift: number | null;
+  upliftU15: number | null;
+  upliftO15: number | null;
 };
 
-export type EventGroupStats = {
-  key: string;
-  label: string;
-  icon: string;
-  eventCount: number;
-  totalVisits: number;
-  averageVisits: number;
-  u15Total: number;
-  o15Total: number;
-  bestEvent?: EventWithStats;
-  events: EventWithStats[];
-};
+const WINDOW_DAYS = 56;
+const dayNumber = (date: string) => Date.parse(`${date}T00:00:00Z`) / 86_400_000;
+const relative = (value: number, base: number) => (base > 0 ? value / base - 1 : null);
 
 /**
- * Categorizes an event title into a logical group / category.
+ * Compares every day with an event against normal days. Visits are not tied to a single event,
+ * so several events on one day form one event day and share its visitors.
  */
-export function categorizeEvent(title: string): { label: string; icon: string } {
-  const lower = title.toLowerCase();
+export function analyzeEventDays(events: ChaxterEvent[], days: DayTotals[]) {
+  const byDate = new Map(days.map((day) => [day.date, day]));
+  const eventsByDate = new Map<string, ChaxterEvent[]>();
+  for (const event of events) eventsByDate.set(event.date, [...(eventsByDate.get(event.date) ?? []), event]);
+  const normalDays = days.filter((day) => !eventsByDate.has(day.date) && day.u15 + day.o15 > 0);
 
-  if (lower.includes("kicker") || lower.includes("tischfußball") || lower.includes("wuzzel")) {
-    return { label: "Kicker-Turniere", icon: "⚽" };
-  }
-  if (lower.includes("billard") || lower.includes("billiard") || lower.includes("pool")) {
-    return { label: "Billard-Turniere", icon: "🎱" };
-  }
-  if (lower.includes("dart") || lower.includes("darts")) {
-    return { label: "Dart-Turniere", icon: "🎯" };
-  }
-  if (lower.includes("tischtennis") || lower.includes("ping pong") || lower.includes("rundlauf")) {
-    return { label: "Tischtennis", icon: "🏓" };
-  }
-  if (lower.includes("gaming") || lower.includes("zock") || lower.includes("fifa") || lower.includes("mario kart") || lower.includes("lan") || lower.includes("playstation")) {
-    return { label: "Gaming & Konsole", icon: "🎮" };
-  }
-  if (lower.includes("kino") || lower.includes("film") || lower.includes("movie")) {
-    return { label: "Kino & Filmabende", icon: "🎬" };
-  }
-  if (lower.includes("koch") || lower.includes("back") || lower.includes("pizza") || lower.includes("grill") || lower.includes("bbq") || lower.includes("waffel")) {
-    return { label: "Kochen & Grillen", icon: "🍕" };
-  }
-  if (lower.includes("kreativ") || lower.includes("bastel") || lower.includes("malen") || lower.includes("töpfer") || lower.includes("workshop") || lower.includes("diy")) {
-    return { label: "Workshops & Kreativ", icon: "🎨" };
-  }
-  if (lower.includes("sommerfest") || lower.includes("herbstfest") || lower.includes("weihnacht") || lower.includes("halloween") || lower.includes("fasching") || lower.includes("party") || lower.includes("fest") || lower.includes("feier") || lower.includes("jubiläum")) {
-    return { label: "Feste & Partys", icon: "🎉" };
-  }
-  if (lower.includes("ausflug") || lower.includes("fahrt") || lower.includes("kletter") || lower.includes("zoo") || lower.includes("trip")) {
-    return { label: "Ausflüge & Aktionen", icon: "🚌" };
-  }
-  if (lower.includes("turnier") || lower.includes("cup") || lower.includes("meisterschaft")) {
-    return { label: "Wettkämpfe & Turniere", icon: "🏆" };
-  }
-
-  // Fallback: Clean title from years, dates and numbers
-  const cleaned = title
-    .replace(/\b(20\d\d)\b/g, "")
-    .replace(/\b(im\s+[a-zäöü]+)\b/gi, "")
-    .replace(/[#\d]+[.)]?/g, "")
-    .replace(/[-–—/]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const fallbackLabel = cleaned.length >= 3 ? cleaned : title.trim();
-  return { label: fallbackLabel, icon: "📌" };
-}
-
-/**
- * Calculates comprehensive event analytics:
- * - Stats per single event (total, u15, o15)
- * - All-time best event
- * - Event groups ranked by average visits
- */
-export function analyzeEventsAttendance(events: ChaxterEvent[], visits: TrackEvent[], days?: { date: string; u15: number; o15: number }[]) {
-  // Aggregate visits by date
-  const visitsByDate = new Map<string, { u15: number; o15: number; total: number }>();
-  for (const visit of visits) {
-    if ((visit as { cancelled?: boolean }).cancelled) continue;
-    const dateKey = dayKey(new Date(visit.timestamp));
-    const current = visitsByDate.get(dateKey) ?? { u15: 0, o15: 0, total: 0 };
-    if (visit.group === "u15") current.u15++;
-    else current.o15++;
-    current.total++;
-    visitsByDate.set(dateKey, current);
-  }
-
-  if (days) for (const day of days) visitsByDate.set(day.date, { u15: day.u15, o15: day.o15, total: day.u15 + day.o15 });
-
-  // Connect each event with visit counts
-  const eventsWithStats: EventWithStats[] = events.map((event) => {
-    const stats = visitsByDate.get(event.date) ?? { u15: 0, o15: 0, total: 0 };
+  const eventDays: EventDay[] = [...eventsByDate].map(([date, dayEvents]) => {
+    const visits = byDate.get(date) ?? { u15: 0, o15: 0 };
+    const position = dayNumber(date);
+    const comparable = normalDays.filter((day) => {
+      const distance = dayNumber(day.date) - position;
+      return distance % 7 === 0 && Math.abs(distance) <= WINDOW_DAYS;
+    });
+    const sum = comparable.reduce((acc, day) => ({ u15: acc.u15 + day.u15, o15: acc.o15 + day.o15 }), { u15: 0, o15: 0 });
+    const baseline = comparable.length
+      ? { u15: sum.u15 / comparable.length, o15: sum.o15 / comparable.length, total: (sum.u15 + sum.o15) / comparable.length, days: comparable.length }
+      : null;
+    const total = visits.u15 + visits.o15;
+    const measured = total > 0 && baseline;
     return {
-      ...event,
-      total: stats.total,
-      u15: stats.u15,
-      o15: stats.o15,
+      date,
+      events: dayEvents,
+      u15: visits.u15,
+      o15: visits.o15,
+      total,
+      baseline,
+      uplift: measured ? relative(total, baseline.total) : null,
+      upliftU15: measured ? relative(visits.u15, baseline.u15) : null,
+      upliftO15: measured ? relative(visits.o15, baseline.o15) : null,
     };
-  });
+  }).sort((a, b) => b.date.localeCompare(a.date));
 
-  // Top single events sorted by total visits descending
-  const topSingleEvents = [...eventsWithStats]
-    .filter((e) => e.total > 0)
-    .sort((a, b) => b.total - a.total || b.date.localeCompare(a.date));
-
-  const allTimeBestEvent = topSingleEvents[0] ?? null;
-
-  // Group events by category
-  const groupsMap = new Map<string, EventGroupStats>();
-  for (const event of eventsWithStats) {
-    const { label, icon } = categorizeEvent(event.title);
-    const existing = groupsMap.get(label) ?? {
-      key: label,
-      label,
-      icon,
-      eventCount: 0,
-      totalVisits: 0,
-      averageVisits: 0,
-      u15Total: 0,
-      o15Total: 0,
-      events: [],
-    };
-
-    existing.eventCount++;
-    existing.totalVisits += event.total;
-    existing.u15Total += event.u15;
-    existing.o15Total += event.o15;
-    existing.events.push(event);
-
-    if (!existing.bestEvent || event.total > existing.bestEvent.total) {
-      existing.bestEvent = event;
-    }
-
-    groupsMap.set(label, existing);
-  }
-
-  // Calculate averages and sort groups by average visits descending
-  const eventGroups: EventGroupStats[] = Array.from(groupsMap.values()).map((g) => ({
-    ...g,
-    averageVisits: g.eventCount > 0 ? Math.round((g.totalVisits / g.eventCount) * 10) / 10 : 0,
-  }));
-
-  eventGroups.sort((a, b) => b.averageVisits - a.averageVisits || b.totalVisits - a.totalVisits);
-
-  const bestEventGroup = eventGroups.find((g) => g.totalVisits > 0) ?? null;
-
-  return {
-    eventsWithStats,
-    topSingleEvents,
-    allTimeBestEvent,
-    eventGroups,
-    bestEventGroup,
-  };
+  const compared = eventDays.filter((day) => day.uplift !== null);
+  const averageUplift = compared.length ? compared.reduce((sum, day) => sum + day.uplift!, 0) / compared.length : null;
+  const best = [...compared].sort((a, b) => b.uplift! - a.uplift! || b.total - a.total)[0] ?? null;
+  return { eventDays, compared: compared.length, averageUplift, best };
 }

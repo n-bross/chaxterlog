@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { ConvexError } from "convex/values";
-import { api, components } from "./_generated/api";
+import { api, components, internal } from "./_generated/api";
 import schema from "./schema";
 import authSchema from "./betterAuth/schema";
 import { redoId } from "../lib/corrections";
@@ -146,5 +146,31 @@ describe("Admin-Export", () => {
     expect((visits.page as { id: string; cancelled: boolean }[]).map((v) => [v.id, v.cancelled]).sort()).toEqual([[u("a"), false], [u("b"), true]].sort());
     const daily = await admin.as.query(api.exports.page, { kind: "daily", from: day, to: day, paginationOpts: page });
     expect(daily.page).toMatchObject([{ date: day, u15: 1, o15: 0 }]);
+  });
+});
+
+describe("Einträge eines Mitarbeiters löschen", () => {
+  test("entfernt nur seine Besuche im Zeitraum und hält die Tagessummen stimmig", async () => {
+    const t = setup();
+    const anna = await signIn(t, "anna"), ben = await signIn(t, "ben");
+    const admin = await signIn(t, "chef", "admin");
+    await expect(anna.as.action(api.admin.deleteEntries, { userId: ben.id, from: day, to: day, password: "x" })).rejects.toThrow("Admin erforderlich");
+    await anna.as.mutation(api.visits.upload, { records: [click("a1", "u15", anna.id), click("a2", "o15", anna.id), click("a3", "u15", anna.id, { cancelled: true, corrections: [undo("a3-undo")] })] });
+    await ben.as.mutation(api.visits.upload, { records: [click("b1", "u15", ben.id)] });
+    const before = await admin.as.query(api.visits.live, { date: day });
+    expect([before.u15, before.o15]).toEqual([2, 1]);
+
+    let done = false;
+    while (!done) done = (await t.mutation(internal.admin.deleteEntriesBatch, { userId: anna.id, from: day, to: day })).done;
+
+    const after = await admin.as.query(api.visits.live, { date: day });
+    expect([after.u15, after.o15]).toEqual([1, 0]);
+    expect(after.revision).toBeGreaterThan(before.revision);
+    const [stats] = (await admin.as.query(api.stats.days, { from: day, to: day, paginationOpts: { cursor: null, numItems: 10 } })).page;
+    expect(stats.u.reduce((a: number, b: number) => a + b, 0)).toBe(1);
+    const left = await admin.as.query(api.exports.page, { kind: "visits", from: day, to: day, paginationOpts: { cursor: null, numItems: 10 } });
+    expect(left.page.map((v) => ("id" in v ? v.id : ""))).toEqual([u("b1")]);
+    const corrections = await admin.as.query(api.exports.page, { kind: "corrections", from: day, to: day, paginationOpts: { cursor: null, numItems: 10 } });
+    expect(corrections.page).toHaveLength(0);
   });
 });

@@ -7,9 +7,9 @@ import { AccordionSection } from "./interior/accordion";
 import { LoadingButton } from "./interior/loading-button";
 import { FloatingLabelInput } from "./interior/floating-label";
 import { PasswordStrength } from "./interior/password-strength";
+import QrLoginCard from "./qr-login-card";
 import ChaxterLogo from "./chaxter-logo";
 import { useEffect, useState, type FormEvent } from "react";
-import { CHECK_UPDATE } from "@/lib/app-update";
 import { authClient } from "@/lib/auth-client";
 import { getDevice, renameDevice, type Device } from "@/lib/device";
 import { readRecords } from "@/lib/sync-state";
@@ -103,11 +103,11 @@ export default function Account({ user }: { user: { username: string; role: stri
     <main className="manage-screen">
       <header className="manage-header">
         <Link className="back-link" href="/">
-          ← Zählung
+          <span className="back-arrow" aria-hidden="true">←</span> Zählung
         </Link>
         <h1>Konto</h1>
         <div className="account-brand">
-          <ChaxterLogo />
+          <ChaxterLogo priority />
         </div>
       </header>
 
@@ -117,44 +117,32 @@ export default function Account({ user }: { user: { username: string; role: stri
         </aside>
       )}
 
-      {/* Accordion Sections for secondary actions */}
-      <AccordionSection title="Angemeldet als" description="Benutzerprofil und Abmeldung" meta={user.role === "admin" ? "Admin" : "Mitarbeiter"}>
-        <div className="account-identity-box">
+      {/* Who is signed in stays visible; everything else folds away. */}
+      <section className="account-identity" aria-label="Angemeldet als">
+        <span className="account-avatar" aria-hidden="true">{user.username.slice(0, 1)}</span>
+        <div className="account-identity-text">
+          <span className="meta">Angemeldet als</span>
           <span className="account-username">{user.username}</span>
-          <span className="account-role-pill">{user.role === "admin" ? "Administrator" : "Mitarbeiter"}</span>
+          <span className="status-pill account-role-pill">{user.role === "admin" ? "Administrator" : "Mitarbeiter"}</span>
+          <span className="account-sync-line">{localClicks ? `${localClicks} ${localClicks === 1 ? "Klick wartet" : "Klicks warten"} auf Übertragung` : "Alle Klicks übertragen"}</span>
         </div>
         <div className="account-btn-group">
           {user.role === "admin" && (
             <Link className="primary-button" href="/admin">
-              Admin-Bereich öffnen
+              Admin-Bereich
             </Link>
           )}
           <LoadingButton
             className="secondary-button"
             disabled={!!busy}
             busy={busy === "logout"}
+            busyLabel="Wird abgemeldet …"
             onClick={logout}
           >
             Abmelden
           </LoadingButton>
         </div>
-      </AccordionSection>
-
-      <AccordionSection title="Installation & Offline-Speicher" description="Lokale Zählerdaten und Gerätestatus" meta="System">
-        <p className="muted">
-          Zählerdaten werden auf diesem Gerät lokal gespeichert und bei Verbindung mit dem Server synchronisiert.
-        </p>
-        <div className="system-status-grid">
-          <div className="status-item">
-            <span className="status-label">Noch nicht synchronisiert</span>
-            <span className="status-value">{localClicks ? `${localClicks} ${localClicks === 1 ? "Klick" : "Klicks"}` : "Alles übertragen"}</span>
-          </div>
-          <div className="status-item">
-            <span className="status-label">Offline-Betrieb</span>
-            <span className="status-value status-ok">Zählen ohne Verbindung</span>
-          </div>
-        </div>
-      </AccordionSection>
+      </section>
 
       <AccordionSection title="Gerätename ändern" description="Name dieses Browsers in der Statistik festlegen" meta="Gerät">
         {device && (
@@ -171,6 +159,12 @@ export default function Account({ user }: { user: { username: string; role: stri
           </>
         )}
       </AccordionSection>
+
+      {user.role !== "admin" && (
+        <AccordionSection title="Anmelde-QR-Code" description="Ohne Passwort anmelden, per Kamera" meta="QR">
+          <QrLoginCard username={user.username} />
+        </AccordionSection>
+      )}
 
       <AccordionSection title="Passwort ändern" description="Zugang und andere Anmeldungen absichern" meta="Sicherheit">
         <form onSubmit={password}>
@@ -193,15 +187,6 @@ export default function Account({ user }: { user: { username: string; role: stri
         </form>
       </AccordionSection>
 
-      <AccordionSection title="App-Version" description="Aktualisierungen der App prüfen" meta="Updates">
-        <p className="muted">
-          Neue Versionen werden automatisch geprüft und nach dem Synchronisieren in einer Bedienpause geladen.
-        </p>
-        <button className="secondary-button" onClick={() => window.dispatchEvent(new Event(CHECK_UPDATE))}>
-          Nach Updates suchen
-        </button>
-      </AccordionSection>
-
       {/* Support & Problem melden */}
       <AccordionSection
         title="Problem melden / Support"
@@ -213,7 +198,7 @@ export default function Account({ user }: { user: { username: string; role: stri
         </p>
 
         {supportMsg && (
-          <p className="notification" role="status" style={{ marginBottom: "1rem" }}>
+          <p className="notification" role="status">
             {supportMsg}
           </p>
         )}
@@ -233,16 +218,17 @@ export default function Account({ user }: { user: { username: string; role: stri
             }
           }}
         >
-          <label className="block text-xs font-medium mb-1" htmlFor="support-notes">Problembeschreibung (optional)</label>
-          <textarea
-            id="support-notes"
-            rows={4}
-            value={supportNotes}
-            onChange={(event) => setSupportNotes(event.target.value)}
-            maxLength={500}
-            placeholder="Was ist passiert? Wann? Auf welchem Gerät?"
-            className="w-full resize-y"
-          />
+          <label htmlFor="support-notes">
+            Problembeschreibung (optional)
+            <textarea
+              id="support-notes"
+              rows={4}
+              value={supportNotes}
+              onChange={(event) => setSupportNotes(event.target.value)}
+              maxLength={500}
+              placeholder="Was ist passiert? Wann? Auf welchem Gerät?"
+            />
+          </label>
           <LoadingButton
             className="secondary-button"
             disabled={supportBusy}
