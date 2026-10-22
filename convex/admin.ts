@@ -7,6 +7,7 @@ import { validDay } from "../lib/export";
 import { requireActor, authComponent, createAuth } from "./auth";
 import type { Doc } from "./_generated/dataModel";
 import { qrIdentifier } from "./qrLogin";
+import { revokeAllTokens } from "./apiTokens";
 // Better Auth errors are plain errors, which production Convex hides; translate them for the admin.
 async function authCall(run: () => Promise<unknown>, fallback: string) {
   try { await run(); } catch (error) {
@@ -25,8 +26,11 @@ export const change = mutation({ args: { action: v.string(), username: v.optiona
     const target = args.userId ? await ctx.runQuery(components.betterAuth.management.user, { id: args.userId }) : null;
     if (!target || target.id === actor.id || target.role === "admin") throw new ConvexError("Dieser Zugang kann hier nicht geändert werden.");
     const userId = target.id as string;
-    // Blocking, a new password or removal also invalidates the person's login QR code.
-    if (["ban", "password", "remove"].includes(args.action)) await (await auth.$context).internalAdapter.deleteVerificationByIdentifier(qrIdentifier(userId));
+    // Blocking, a new password or removal also invalidates the person's login QR code and shortcut tokens.
+    if (["ban", "password", "remove"].includes(args.action)) {
+      await (await auth.$context).internalAdapter.deleteVerificationByIdentifier(qrIdentifier(userId));
+      await revokeAllTokens(ctx, userId);
+    }
     if (args.action === "ban") await authCall(() => auth.api.banUser({ headers, body: { userId, banReason: "Vom Admin gesperrt" } }), "Sperren fehlgeschlagen.");
     else if (args.action === "unban") await authCall(() => auth.api.unbanUser({ headers, body: { userId } }), "Freigeben fehlgeschlagen.");
     else if (args.action === "remove") {
@@ -96,7 +100,7 @@ export const deleteEntriesBatch = internalMutation({ args: { userId: v.string(),
   }
   // A new revision makes every open counter replace its local copy of these days.
   for (const day of days.values()) {
-    if (day.daily) await ctx.db.patch(day.daily._id, { u15: day.u15, o15: day.o15, cancelled: day.cancelled, revision: day.daily.revision + 1 });
+    if (day.daily) await ctx.db.patch(day.daily._id, { u15: day.u15, o15: day.o15, cancelled: day.cancelled, revision: day.daily.revision + 1, updatedAt: Date.now() });
     if (day.hours) await ctx.db.patch(day.hours._id, { u: day.u, o: day.o });
   }
   return { deleted: visits.length, done: visits.length < 200 };

@@ -9,6 +9,7 @@ import { FloatingLabelInput } from "./interior/floating-label";
 import { PasswordStrength } from "./interior/password-strength";
 import TwoFactorCard from "./two-factor-card";
 import QrLoginCard from "./qr-login-card";
+import ApiTokenCard from "./api-token-card";
 import ChaxterLogo from "./chaxter-logo";
 import { useEffect, useState, type FormEvent } from "react";
 import { authClient } from "@/lib/auth-client";
@@ -167,6 +168,10 @@ export default function Account({ user }: { user: { username: string; role: stri
           {session?.user.twoFactorEnabled ? <p className="muted">2FA ist aktiv. Melde weitere Geräte mit Passwort und Authenticator-Code an.</p> : <QrLoginCard username={user.username} />}
         </AccordionSection>
       )}
+
+      <AccordionSection title="Handy-Widget & Kurzbefehle" description="Per Apple Kurzbefehl oder Android-Widget zählen" meta="API">
+        <ApiTokenCard />
+      </AccordionSection>
 
       <AccordionSection title="Zwei-Faktor-Authentifizierung" description="Optional mit einer Authenticator-App absichern" meta="2FA">
         <TwoFactorCard />

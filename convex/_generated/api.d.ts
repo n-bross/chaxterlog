@@ -9,6 +9,7 @@
  */
 
 import type * as admin from "../admin.js";
+import type * as apiTokens from "../apiTokens.js";
 import type * as auth from "../auth.js";
 import type * as corrections from "../corrections.js";
 import type * as devices from "../devices.js";
@@ -29,6 +30,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
+  apiTokens: typeof apiTokens;
   auth: typeof auth;
   corrections: typeof corrections;
   devices: typeof devices;
