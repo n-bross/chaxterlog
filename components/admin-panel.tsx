@@ -97,6 +97,28 @@ export default function AdminPanel() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    let link = document.querySelector<HTMLLinkElement>("link[rel*='icon']");
+    let created = false;
+    let prevHref = "";
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+      created = true;
+    } else {
+      prevHref = link.href;
+    }
+    link.href = "/admin-icon.svg";
+    return () => {
+      if (created) {
+        link?.remove();
+      } else if (link && prevHref) {
+        link.href = prevHref;
+      }
+    };
+  }, []);
+
   async function more(kind: "users" | "devices" | "reports") {
     if (!data?.cursors[kind]) return;
     setBusy(true);
@@ -178,7 +200,9 @@ export default function AdminPanel() {
           <span className="back-arrow" aria-hidden="true">←</span> Konto
         </Link>
         <h1>Admin</h1>
-        <span aria-hidden="true" />
+        <div className="account-brand">
+          <span className="badge-highlight">Admin</span>
+        </div>
       </header>
 
       {error && <p role="alert" className="error-message">{error}</p>}
