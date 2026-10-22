@@ -1,11 +1,10 @@
 // Scriptable (iOS) home-screen widget: U15 +1, Ü15 +1 and Undo, with today's totals on the buttons.
 // The token is embedded, so the generated script must be treated like a password.
-export function scriptableWidget(apiOrigin: string, appOrigin: string, token: string) {
+export function scriptableWidget(apiOrigin: string, token: string) {
   return `// ChaxterLog – Zähl-Widget für Scriptable (mittlere Größe)
 // Enthält deinen persönlichen Token: nicht weitergeben.
 const BASE = ${JSON.stringify(`${apiOrigin}/api/v1`)};
 const TOKEN = ${JSON.stringify(token)};
-const APP = ${JSON.stringify(appOrigin)};
 
 const PETROL = new Color("#00698c"), DEEP = new Color("#004f6a"), YELLOW = new Color("#fffd24");
 const files = FileManager.local();
@@ -43,17 +42,19 @@ function button(row, width, title, value, action, color) {
   box.cornerRadius = 16;
   box.backgroundColor = color;
   box.url = runUrl(action);
-  const head = box.addText(title);
+  // Each text also carries the link, so taps on the label hit the button too.
+  const link = (text) => { text.url = box.url; return text; };
+  const head = link(box.addText(title));
   head.font = action === "undo" ? Font.boldSystemFont(24) : Font.semiboldSystemFont(13);
   head.textColor = new Color("#ffffff", 0.8);
   box.addSpacer();
   if (value !== null) {
-    const number = box.addText(String(value));
+    const number = link(box.addText(String(value)));
     number.font = Font.boldRoundedSystemFont(32);
     number.textColor = Color.white();
     number.minimumScaleFactor = 0.5;
   }
-  const hint = box.addText(action === "undo" ? "zurück" : "+1");
+  const hint = link(box.addText(action === "undo" ? "zurück" : "+1"));
   hint.font = Font.semiboldSystemFont(12);
   hint.textColor = YELLOW;
 }
@@ -62,7 +63,7 @@ function widget(data) {
   const w = new ListWidget();
   w.backgroundColor = new Color("#f7f7f6");
   w.setPadding(12, 12, 12, 12);
-  w.url = APP;
+  // No widget-wide URL: it would take precedence over the buttons on some iOS versions.
   const top = w.addStack();
   top.centerAlignContent();
   const title = top.addText("ChaxterLog");
@@ -73,6 +74,8 @@ function widget(data) {
   stamp.font = Font.systemFont(11);
   stamp.textColor = new Color("#6f6f6f");
   w.addSpacer(8);
+  // Small widgets have a single tap target, so the three buttons need the medium size.
+  if (config.widgetFamily === "small") data = { error: "small", text: "Bitte das Widget in mittlerer Größe hinzufügen." };
   if (data.error) {
     const message = w.addText(data.text || data.error);
     message.font = Font.systemFont(13);

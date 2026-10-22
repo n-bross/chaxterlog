@@ -73,7 +73,7 @@ Ein mittelgroßes Widget mit drei Knöpfen: **U15** und **Ü15** zeigen jeweils 
 1. [Scriptable](https://apps.apple.com/app/scriptable/id1405459188) installieren (kostenlos).
 2. In ChaxterLog nach dem Erstellen des Tokens **Scriptable-Widget kopieren** tippen. Das Skript enthält Adresse und Token bereits.
 3. Scriptable → **+** → einfügen → oben „ChaxterLog“ als Namen eintragen.
-4. Auf dem Home-Bildschirm ein **mittleres** Scriptable-Widget hinzufügen → gedrückt halten → **Widget bearbeiten** → Script: „ChaxterLog“, „Bei Interaktion“: **URL öffnen** lassen.
+4. Auf dem Home-Bildschirm ein **mittleres** Scriptable-Widget hinzufügen → gedrückt halten → **Widget bearbeiten** → Script: „ChaxterLog“, „Bei Interaktion“: **App öffnen** (Standard). Die Knöpfe bringen ihre eigenen Links mit; in der kleinen Größe funktionieren sie nicht.
 
 Grenzen, die iOS vorgibt:
 
