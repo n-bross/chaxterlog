@@ -1,11 +1,11 @@
 import { ConvexError, v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
-import { query, mutation, type QueryCtx } from "./_generated/server";
+import { query, mutation, type QueryCtx, type MutationCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireActor } from "./auth";
 import { touchDevice } from "./devices";
 import { dayKey } from "../lib/tracking";
-import { isVisitRecord } from "../lib/sync-state";
+import { isVisitRecord, type VisitRecord } from "../lib/sync-state";
 import { redoId } from "../lib/corrections";
 import { updateAggregate } from "../lib/aggregation";
 import { validDay } from "../lib/export";
@@ -32,8 +32,13 @@ export const live = query({ args: { date: v.string() }, handler: async (ctx, { d
 export const upload = mutation({ args: { records: v.array(v.any()) }, handler: async (ctx, args) => {
   const actor = await requireActor(ctx);
   if (args.records.length > 100 || JSON.stringify(args).length > 120_000 || !args.records.every(isVisitRecord)) throw new ConvexError("Ungültiger Klickstapel.");
+  return applyRecords(ctx, actor, args.records);
+} });
+
+// Shared by the app's upload and the shortcut API, so totals, hours and corrections stay consistent.
+export async function applyRecords(ctx: MutationCtx, actor: { id: string; username: string }, records: VisitRecord[]) {
   const ack: { id: string; cancelled: boolean; date: string; revision: number }[] = [];
-  for (const event of args.records) {
+  for (const event of records) {
     if ((event.corrections ?? []).some((c) => c.userId && c.userId !== actor.id)) throw new ConvexError("Offene Korrekturen gehören zu einem anderen Benutzer. Bitte mit diesem Konto anmelden.");
     let old = await ctx.db.query("visits").withIndex("uuid", (q) => q.eq("id", event.id)).unique();
     if (!old && !event.legacy && event.userId && event.userId !== actor.id) throw new ConvexError("Offene Klicks gehören zu einem anderen Benutzer. Bitte mit diesem Konto anmelden.");
@@ -83,7 +88,7 @@ export const upload = mutation({ args: { records: v.array(v.any()) }, handler: a
     ack.push({ id: event.id, cancelled, date, revision });
   }
   return ack;
-} });
+}
 export const list = query({ args: { from: v.string(), to: v.string(), paginationOpts: paginationOptsValidator }, handler: async (ctx, { from, to, paginationOpts }) => {
   await requireActor(ctx);
   const page = await ctx.db.query("visits").withIndex("date", (q) => q.gte("date", from).lte("date", to)).order("desc").paginate({ ...paginationOpts, numItems: Math.min(50, paginationOpts.numItems) });

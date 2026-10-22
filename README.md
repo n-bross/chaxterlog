@@ -172,6 +172,10 @@ Bei Domainwechsel `SITE_URL` im richtigen Convex-Deployment und die öffentliche
 
 Android/Chrome: Menü → „Installieren und Verknüpfung erstellen“. iOS/Safari: Teilen → „Zum Home-Bildschirm“. Manifest, PNG-Icons, maskierbares Icon und Apple-Touch-Icon sind enthalten. Split Screen und schwebende Browserfenster stellt das Betriebssystem bereit.
 
+## Kurzbefehle und Widgets
+
+Unter Konto → „Handy-Widget & Kurzbefehle“ erstellt jeder Benutzer persönliche Tokens. Damit zählen Apple Kurzbefehle, Scriptable-Widgets und die Android-App HTTP Shortcuts über `POST /api/v1/visit`, `POST /api/v1/undo` und `GET /api/v1/today`. Die Endpunkte sind Convex HTTP Actions (`convex/http.ts`, `convex/apiTokens.ts`); `next.config.ts` leitet `/api/v1/*` von der App-Domain dorthin weiter. Gespeichert wird nur der SHA-256-Hash des Tokens. Einrichtung Schritt für Schritt: [docs/kurzbefehle.md](docs/kurzbefehle.md).
+
 ## Automatische App-Updates
 
 Jeder Build enthält eine eindeutige öffentliche Versionskennung. `/api/version` bleibt unverändert und liefert die aktuelle Version mit `no-store` auch für CDN-Caches. Der globale Client prüft beim Laden, Fokus, Sichtbarkeit, Rückkehr aus dem Seitencache, Internet-Rückkehr und jede Minute. Bei neuer Version erfolgt nach mindestens zehn Sekunden ohne Bedienung ein vollständiges Neuladen; Version und Verbindung werden unmittelbar vorher erneut geprüft. Dieses Versions-Polling ist vom ereignisgesteuerten Besuchssync unabhängig.

@@ -176,3 +176,77 @@ describe("Einträge eines Mitarbeiters löschen", () => {
     expect(corrections.page).toHaveLength(0);
   });
 });
+
+describe("Kurzbefehl-API", () => {
+  const send = (t: T, path: string, token: string | null, body?: unknown, method = "POST") =>
+    t.fetch(path, { method, headers: token ? { Authorization: `Bearer ${token}` } : {}, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+
+  test("zählt, liest und nimmt den eigenen letzten Klick zurück", async () => {
+    const t = setup();
+    const staff = await signIn(t, "anna");
+    const { token } = await staff.as.mutation(api.apiTokens.create, { name: "Annas iPhone" });
+    expect((await send(t, "/api/v1/visit", token, { group: "u15" })).status).toBe(200);
+    const added = await (await send(t, "/api/v1/visit", token, { group: "Ü15" })).json();
+    expect([added.u15, added.o15, added.total]).toEqual([1, 1, 2]);
+    expect(added.text).toContain("Ü15 +1");
+    const live = await staff.as.query(api.visits.live, { date: added.date });
+    expect([live.u15, live.o15]).toEqual([1, 1]);
+
+    const undone = await (await send(t, "/api/v1/undo", token)).json();
+    expect(undone.undone.group).toBe("o15");
+    expect([undone.u15, undone.o15]).toEqual([1, 0]);
+    const corrections = await t.run((ctx) => ctx.db.query("corrections").collect());
+    expect(corrections.map((c) => [c.kind, c.username, c.deviceName])).toEqual([["undo", "anna", "Annas iPhone"]]);
+
+    const today = await t.fetch(`/api/v1/today?format=text&token=${token}`);
+    expect(await today.text()).toBe("U15: 1 · Ü15: 0 · Gesamt: 1");
+    expect((await (await send(t, "/api/v1/undo", token, { group: "o15" })).json()).undone).toBeNull();
+  });
+
+  test("dieselbe Klick-ID zählt bei Wiederholung nur einmal", async () => {
+    const t = setup();
+    const staff = await signIn(t, "anna");
+    const { token } = await staff.as.mutation(api.apiTokens.create, { name: "Handy" });
+    const id = crypto.randomUUID();
+    await send(t, "/api/v1/visit", token, { group: "u15", id });
+    const again = await (await send(t, "/api/v1/visit", token, { group: "u15", id })).json();
+    expect(again.u15).toBe(1);
+  });
+
+  test("Rückgängig betrifft nie Klicks anderer Mitarbeiter", async () => {
+    const t = setup();
+    const anna = await signIn(t, "anna"), ben = await signIn(t, "ben");
+    const { token } = await anna.as.mutation(api.apiTokens.create, { name: "Handy" });
+    const first = await (await send(t, "/api/v1/visit", token, { group: "u15" })).json();
+    const now = new Date().toISOString();
+    await ben.as.mutation(api.visits.upload, { records: [{ id: crypto.randomUUID(), group: "u15", timestamp: now, order: Date.parse(now) + 1, cancelled: false, userId: ben.id }] });
+    await send(t, "/api/v1/undo", token);
+    const live = await anna.as.query(api.visits.live, { date: first.date });
+    expect(live.u15).toBe(1);
+    expect((await (await send(t, "/api/v1/undo", token)).json()).undone).toBeNull();
+  });
+
+  test("ungültige, widerrufene und fremde Tokens werden abgewiesen", async () => {
+    const t = setup();
+    const anna = await signIn(t, "anna"), ben = await signIn(t, "ben");
+    expect((await send(t, "/api/v1/visit", null, { group: "u15" })).status).toBe(401);
+    expect((await send(t, "/api/v1/visit", `chx_${"0".repeat(64)}`, { group: "u15" })).status).toBe(401);
+    const { token } = await anna.as.mutation(api.apiTokens.create, { name: "Handy" });
+    expect((await send(t, "/api/v1/visit", token, { group: "kinder" })).status).toBe(400);
+    // Write endpoints accept the token only as a header.
+    expect((await t.fetch(`/api/v1/visit?group=u15&token=${token}`, { method: "POST" })).status).toBe(401);
+    const [listed] = await anna.as.query(api.apiTokens.list, {});
+    expect(listed.hint).toBe(token.slice(-4));
+    await expect(ben.as.mutation(api.apiTokens.revoke, { id: listed.id })).rejects.toThrow("Token nicht gefunden");
+    await anna.as.mutation(api.apiTokens.revoke, { id: listed.id });
+    expect((await send(t, "/api/v1/today", token, undefined, "GET")).status).toBe(401);
+  });
+
+  test("gesperrte Benutzer können mit ihrem Token nicht mehr zählen", async () => {
+    const t = setup();
+    const anna = await signIn(t, "anna");
+    const { token } = await anna.as.mutation(api.apiTokens.create, { name: "Handy" });
+    await t.mutation(components.betterAuth.adapter.updateOne, { input: { model: "user", where: [{ field: "_id", value: anna.id }], update: { banned: true } } });
+    expect((await send(t, "/api/v1/visit", token, { group: "u15" })).status).toBe(401);
+  });
+});
