@@ -11,7 +11,7 @@ const sans = Geist({ subsets: ["latin"], variable: "--font-geist-sans", display:
 const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "ChaxterLog · Einfach zählen.",
+  title: "ChaxterLog",
   description: "Die Besucherzählung für das Schülercafé Grafing. Ein Tippen, ein Besuch.",
   applicationName: "ChaxterLog",
   manifest: "/manifest.json",
