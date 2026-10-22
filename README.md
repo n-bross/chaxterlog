@@ -145,7 +145,7 @@ Für Vercel:
 2. Produktionsvariablen in Convex setzen:
 
    ```bash
-   npx convex env set --prod SITE_URL https://chaxterlog.vercel.app
+   npx convex env set --prod SITE_URL https://chaxterlog.jufo-grafing.de
    npx convex env set --prod BETTER_AUTH_SECRET "$(openssl rand -base64 32)"
    ```
 
@@ -155,32 +155,18 @@ Für Vercel:
 5. Nach dem ersten erfolgreichen Deployment den Produktions-Admin vorbereiten:
 
    ```bash
-   SITE_URL=https://chaxterlog.vercel.app node --env-file=.env.local scripts/setup-admin.mjs --prod
+   SITE_URL=https://chaxterlog.jufo-grafing.de node --env-file=.env.local scripts/setup-admin.mjs --prod
    ```
 
    Den lokal gespeicherten Einmallink öffnen und das Passwort setzen. Der CLI-Zugang muss zum vorgesehenen Projekt gehören.
 
-Produktionsadresse: https://chaxterlog.vercel.app. Bei Domainwechsel `SITE_URL` im richtigen Convex-Deployment und die öffentlichen Website-Variablen aktualisieren. Preview-Deployments brauchen ein eigenes Convex-Deployment mit passender Auth-Origin; keine produktive Zählung oder Benutzer für unkontrollierte Previews teilen.
+Produktionsadresse: https://chaxterlog.jufo-grafing.de. `main` ist der einzige Veröffentlichungsbranch. Änderungen auf `main` werden über die bestehende GitHub-Verbindung von Vercel gebaut und gemeinsam mit den Convex-Funktionen veröffentlicht. Automatische Preview-Deployments sind im Vercel-Projekt deaktiviert; das separate Projekt `chaxterlog-staging` wird nicht mehr verwendet.
 
-### Vercel-Previews
+Bei Domainwechsel `SITE_URL` im richtigen Convex-Deployment und die öffentlichen Website-Variablen aktualisieren.
 
-`vercel.json` setzt den Build-Befehl auf `scripts/vercel-build.sh`. Produktion deployt mit dem Produktions-Key (siehe oben). Preview-Builds legen pro Branch ein eigenes Convex-Preview-Deployment an, deployen die Funktionen, und bauen die Website gegen dessen URL. Die `.site`-Adresse wird aus `NEXT_PUBLIC_CONVEX_URL` abgeleitet. Previews haben kein festes `SITE_URL`; Better Auth übernimmt die Origin pro Anfrage, wenn sie zu `SITE_ALLOWED_HOSTS` passt. Das Skript bricht ab, wenn `CONVEX_DEPLOY_KEY` kein Preview-Key (`preview:…`) ist, damit Previews nie in Dev oder Produktion deployen.
+### Historischer Excel-Import
 
-Einmalig:
-
-1. Im Convex-Dashboard unter Project Settings einen **Preview Deploy Key** erzeugen und in Vercel als `CONVEX_DEPLOY_KEY` nur für **Preview** hinterlegen.
-2. Standardvariablen für alle Previews (eigenes Secret, nicht das Produktions-Secret):
-
-   ```bash
-   openssl rand -base64 32 | npx convex env default set --type preview BETTER_AUTH_SECRET
-   npx convex env default set --type preview SITE_ALLOWED_HOSTS 'chaxterlog-*-nbross.vercel.app'
-   ```
-
-Jede Preview startet mit leerer Datenbank. Admin für einen Branch vorbereiten (`SITE_URL` ist die Branch-URL aus Vercel, `--preview-name` der Git-Branch):
-
-```bash
-SITE_URL=https://chaxterlog-git-t3-mein-branch-nbross.vercel.app node scripts/setup-admin.mjs --preview-name t3/mein-branch
-```
+`scripts/import-excel-legacy.mjs` sichert das frühere einmalige Importskript für die Neon/Postgres-Datenbank. Es benötigt die damalige Datenbank, die alte Excel-Datei und die nicht mehr installierte Neon-Bibliothek. Es gehört nicht zum Build und ist kein Importwerkzeug für die heutige Convex-Datenbank.
 
 ## Homescreen
 
