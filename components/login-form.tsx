@@ -8,11 +8,14 @@ import { authClient } from "@/lib/auth-client";
 import { FloatingLabelInput } from "./interior/floating-label";
 import ChaxterLogo from "./chaxter-logo";
 import { LoadingButton } from "./interior/loading-button";
+import { OtpInput } from "./interior/otp-input";
 import QrScanner from "./qr-scanner";
 
 export default function LoginForm({ setup = false }: { setup?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [secondFactor, setSecondFactor] = useState(false);
+  const [backup, setBackup] = useState(false);
   const [scanning, setScanning] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -42,12 +45,28 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
                 ? "Dieser Zugang ist gesperrt. Bitte an die Leitung wenden."
                 : "Benutzername oder Passwort stimmt nicht."
         );
+      if (result.data && "twoFactorRedirect" in result.data && result.data.twoFactorRedirect) {
+        setSecondFactor(true); return;
+      }
       window.location.assign(setup ? "/admin" : "/");
     } catch (error) {
       setError(errorMessage(error, "Verbindung fehlgeschlagen."));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function verifySecondFactor(code: string) {
+    if (busy) return;
+    setBusy(true); setError("");
+    try {
+      const result = backup
+        ? await authClient.twoFactor.verifyBackupCode({ code })
+        : await authClient.twoFactor.verifyTotp({ code });
+      if (result.error) throw new Error(result.error.status === 429 ? "Zu viele Versuche. Bitte eine Minute warten." : "Code ungültig oder Anmeldung abgelaufen. Bitte erneut versuchen.");
+      window.location.assign("/");
+    } catch (e) { setError(errorMessage(e, "Verbindung fehlgeschlagen.")); }
+    finally { setBusy(false); }
   }
 
   return (
@@ -58,7 +77,17 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
         </div>
         <h1>{setup ? "Admin einrichten" : "Anmelden"}</h1>
         <p className="auth-subtitle">{setup ? "Einmalig: Passwort für den Admin-Zugang festlegen." : "Besucherzählung im Schülercafé Grafing"}</p>
-        <form onSubmit={submit}>
+        {secondFactor ? <div className="two-factor-card">
+          <h2>Anmeldung bestätigen</h2>
+          <p className="muted">{backup ? "Gib einen deiner einmal verwendbaren Wiederherstellungscodes ein." : "Gib den sechsstelligen Code aus deiner Authenticator-App ein."}</p>
+          {backup ? <form onSubmit={(event) => { event.preventDefault(); void verifySecondFactor(String(new FormData(event.currentTarget).get("code")).trim()); }}>
+            <FloatingLabelInput label="Wiederherstellungscode" name="code" autoComplete="off" required disabled={busy} />
+            <LoadingButton busy={busy}>Anmelden</LoadingButton>
+          </form> : <OtpInput label="Authenticator-Code" autoFocus disabled={busy} onComplete={(code) => void verifySecondFactor(code)} onChange={() => setError("")} status={error ? "error" : "idle"} errorMessage={error} hint="Code eingeben oder einfügen." />}
+          {error && backup && <p role="alert" className="error-message">{error}</p>}
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => { setBackup(!backup); setError(""); }}>{backup ? "Authenticator-Code verwenden" : "Wiederherstellungscode verwenden"}</button>
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => { setSecondFactor(false); setBackup(false); setError(""); }}>Zurück zur Anmeldung</button>
+        </div> : <form onSubmit={submit}>
           <FloatingLabelInput label="Benutzername"
               name="username"
               autoComplete="username"
@@ -100,8 +129,8 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
           <LoadingButton busy={busy} busyLabel="Bitte warten …">
             {setup ? "Admin-Zugang erstellen" : "Anmelden"}
           </LoadingButton>
-        </form>
-        {!setup && (
+        </form>}
+        {!setup && !secondFactor && (
           <>
             <div className="auth-divider" aria-hidden="true"><span>oder</span></div>
             <button type="button" className="secondary-button qr-login-button" onClick={() => setScanning(true)}>

@@ -41,12 +41,14 @@ describe("Zugriffsschutz", () => {
     expect(await t.query(api.auth.currentUser, {})).toBeNull();
   });
 
-  test("Mitarbeiter erreichen keine Admin-Funktionen und keinen Export", async () => {
+  test("Mitarbeiter erhalten Tageswerte, aber keine Admin-Funktionen oder Einzeldaten", async () => {
     const t = setup();
     const staff = await signIn(t, "anna");
     const page = { cursor: null, numItems: 10 };
     await expect(staff.as.query(api.admin.users, { paginationOpts: page })).rejects.toThrow("Admin erforderlich");
     await expect(staff.as.query(api.exports.page, { kind: "visits", from: day, to: day, paginationOpts: page })).rejects.toThrow("Admin erforderlich");
+    await expect(staff.as.query(api.exports.page, { kind: "corrections", from: day, to: day, paginationOpts: page })).rejects.toThrow("Admin erforderlich");
+    expect((await staff.as.query(api.exports.page, { kind: "daily", from: day, to: day, paginationOpts: page })).page).toEqual([]);
     await expect(staff.as.mutation(api.admin.change, { action: "ban", userId: staff.id })).rejects.toThrow("Admin erforderlich");
   });
 

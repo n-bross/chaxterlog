@@ -2,7 +2,7 @@ import { ConvexError } from "convex/values";
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex } from "@convex-dev/better-auth/plugins";
 import { betterAuth, type BetterAuthOptions } from "better-auth/minimal";
-import { admin, username } from "better-auth/plugins";
+import { admin, username, twoFactor } from "better-auth/plugins";
 import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { query } from "./_generated/server";
@@ -29,7 +29,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => ({
   } },
   user: { changeEmail: { enabled: false } },
   disabledPaths: ["/sign-up/email", "/sign-in/email", "/request-password-reset", "/reset-password", "/update-user", "/change-email", "/delete-user"],
-  plugins: [qrLogin(), admin(), username({ minUsernameLength: 3, maxUsernameLength: 30, usernameValidator: (value: string) => /^[a-z0-9_.-]{3,30}$/i.test(value) }), convex({ authConfig })],
+  plugins: [qrLogin(), twoFactor({ issuer: "ChaxterLog" }), admin(), username({ minUsernameLength: 3, maxUsernameLength: 30, usernameValidator: (value: string) => /^[a-z0-9_.-]{3,30}$/i.test(value) }), convex({ authConfig })],
 }) satisfies BetterAuthOptions;
 export const createAuth = (ctx: GenericCtx<DataModel>) => betterAuth(createAuthOptions(ctx));
 export async function requireActor(ctx: GenericCtx<DataModel>, adminOnly = false) {

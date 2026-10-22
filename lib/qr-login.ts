@@ -19,5 +19,9 @@ export async function signInWithQr(token: string) {
   }
   const response = await fetch("/api/auth/qr-login/sign-in", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
   if (response.status === 429) throw new Error("Zu viele Anmeldeversuche. Bitte eine Minute warten.");
+  if (response.status === 403) {
+    const body = await response.json().catch(() => null);
+    if (body?.message === "Mit aktiver 2FA bitte mit Passwort und Authenticator anmelden.") throw new Error(body.message);
+  }
   if (!response.ok) throw new Error("Dieser QR-Code ist ungültig oder abgelaufen. Bitte mit Passwort anmelden und im Konto einen neuen QR-Code erstellen.");
 }

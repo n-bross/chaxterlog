@@ -1,5 +1,5 @@
 // Official @convex-dev/better-auth 0.12.5 schema, extended for the admin plugin.
-// Keep role/ban/session fields and indexes in sync with convex/auth.ts.
+// Keep admin and two-factor fields/indexes in sync with the installed Better Auth plugins.
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -75,6 +75,8 @@ export const tables = {
     backupCodes: v.string(),
     userId: v.string(),
     verified: v.optional(v.union(v.null(), v.boolean())),
+    failedVerificationCount: v.optional(v.union(v.null(), v.number())),
+    lockedUntil: v.optional(v.union(v.null(), v.number())),
   })
     .index("userId", ["userId"]),
   oauthApplication: defineTable({
