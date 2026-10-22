@@ -22,11 +22,11 @@ export async function GET(request: Request) {
   if (!token) return new Response(null, { status: 401 });
   const actor = await fetchQuery(api.auth.currentUser, {}, { token });
   if (!actor) return new Response(null, { status: 401 });
-  if (actor.role !== "admin") return new Response(null, { status: 403 });
   const params = new URL(request.url).searchParams;
   const from = params.get("from") || "2000-01-01", to = params.get("to") || "2100-12-31";
   const format = params.get("format") || "csv";
   if (!validDay(from) || !validDay(to) || from > to || !["csv", "daily", "monthly", "json"].includes(format)) return Response.json({ error: "Ungültiger Zeitraum oder Dateityp." }, { status: 400 });
+  if (actor.role !== "admin" && format !== "daily" && format !== "monthly") return new Response(null, { status: 403 });
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({ async start(controller) {
     const emit = (value: string) => controller.enqueue(encoder.encode(value));

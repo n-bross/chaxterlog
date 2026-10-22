@@ -26,8 +26,9 @@ export const qrLogin = () => ({
   id: "qr-login",
   endpoints: {
     createQrLogin: createAuthEndpoint("/qr-login/create", { method: "POST", use: [sessionMiddleware] }, async (ctx) => {
-      const user = ctx.context.session.user as { id: string; role?: string | null };
+      const user = ctx.context.session.user as { id: string; role?: string | null; twoFactorEnabled?: boolean | null };
       if (user.role === "admin") throw new APIError("FORBIDDEN", { message: "Admins melden sich mit Passwort an." });
+      if (user.twoFactorEnabled) throw new APIError("FORBIDDEN", { message: "Mit aktiver 2FA bitte mit Passwort und Authenticator anmelden." });
       const secret = generateRandomString(40);
       const expiresAt = new Date(Date.now() + QR_LOGIN_DAYS * 86_400_000);
       await ctx.context.internalAdapter.deleteVerificationByIdentifier(qrIdentifier(user.id));
@@ -50,6 +51,7 @@ export const qrLogin = () => ({
       if (!entry || new Date(entry.expiresAt).getTime() <= Date.now() || !sameText(entry.value, await sha256(secret))) throw invalid();
       const user = await ctx.context.internalAdapter.findUserById(userId) as ({ id: string; role?: string | null; banned?: boolean | null } & Record<string, unknown>) | null;
       if (!user || user.banned || user.role === "admin") throw invalid();
+      if (user.twoFactorEnabled) throw new APIError("FORBIDDEN", { message: "Mit aktiver 2FA bitte mit Passwort und Authenticator anmelden." });
       const session = await ctx.context.internalAdapter.createSession(user.id);
       if (!session) throw invalid();
       await setSessionCookie(ctx, { session, user: user as never });

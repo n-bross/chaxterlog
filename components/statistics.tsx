@@ -351,7 +351,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
         open={exportOpen}
         onClose={() => setExportOpen(false)}
         title="Daten & Grafiken herunterladen"
-        description={isAdmin ? "Tabellen für Berichte, eine Sicherung aller Besuche und eine Grafik." : "Grafik der Auswertung. Tabellen (CSV/JSON) kann nur der Admin herunterladen."}
+        description={isAdmin ? "Listen und Sicherungen für den gewählten Zeitraum herunterladen." : "Liste für den gewählten Zeitraum oder die Auswertung als Grafik herunterladen."}
         maxWidth={500}
       >
         <div className="download-modal-body">
@@ -368,15 +368,13 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
             <p role="alert" className="error-message">Das Enddatum liegt vor dem Anfangsdatum.</p>
           ) : (
             <>
-              {isAdmin && <>
-                <div className="download-section-heading meta">Tabellen (CSV, z. B. für Excel)</div>
-                <div className="button-row download-button-group">
-                  <LoadingButton className="primary-button" onAction={() => handleDownload("monthly")} pendingLabel="Erstelle CSV …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Monatswerte</LoadingButton>
-                  <LoadingButton className="secondary-button" onAction={() => handleDownload("daily")} pendingLabel="Erstelle CSV …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Tageswerte</LoadingButton>
-                  <LoadingButton className="secondary-button" onAction={() => handleDownload("csv")} pendingLabel="Erstelle CSV …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Einzelbesuche</LoadingButton>
-                  <LoadingButton className="secondary-button" onAction={() => handleDownload("json")} pendingLabel="Erstelle JSON …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Sicherung (JSON)</LoadingButton>
-                </div>
-              </>}
+              <div className="download-section-heading meta">Daten herunterladen</div>
+              <p className="muted">Die Liste enthält je Tag U15, Ü15 und Gesamt für den oben gewählten Zeitraum.</p>
+              <div className="button-row download-button-group">
+                <LoadingButton className="primary-button" onAction={() => handleDownload("daily")} pendingLabel="Erstelle CSV …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Liste (CSV)</LoadingButton>
+                {isAdmin && <LoadingButton className="secondary-button" onAction={() => handleDownload("csv")} pendingLabel="Erstelle CSV …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Einzelbesuche (CSV)</LoadingButton>}
+                {isAdmin && <LoadingButton className="secondary-button" onAction={() => handleDownload("json")} pendingLabel="Erstelle JSON …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Sicherung (JSON)</LoadingButton>}
+              </div>
               <div className="download-section-heading meta">Grafik</div>
               <div className="button-row">
                 <LoadingButton

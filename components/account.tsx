@@ -7,6 +7,7 @@ import { AccordionSection } from "./interior/accordion";
 import { LoadingButton } from "./interior/loading-button";
 import { FloatingLabelInput } from "./interior/floating-label";
 import { PasswordStrength } from "./interior/password-strength";
+import TwoFactorCard from "./two-factor-card";
 import QrLoginCard from "./qr-login-card";
 import ChaxterLogo from "./chaxter-logo";
 import { useEffect, useState, type FormEvent } from "react";
@@ -16,6 +17,7 @@ import { readRecords } from "@/lib/sync-state";
 import { sendDiagnosticReport } from "@/lib/support";
 
 export default function Account({ user }: { user: { username: string; role: string } }) {
+  const { data: session } = authClient.useSession();
   const [device, setDevice] = useState<Device | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState<"device" | "password" | "logout" | null>(null);
@@ -162,9 +164,13 @@ export default function Account({ user }: { user: { username: string; role: stri
 
       {user.role !== "admin" && (
         <AccordionSection title="Anmelde-QR-Code" description="Ohne Passwort anmelden, per Kamera" meta="QR">
-          <QrLoginCard username={user.username} />
+          {session?.user.twoFactorEnabled ? <p className="muted">2FA ist aktiv. Melde weitere Geräte mit Passwort und Authenticator-Code an.</p> : <QrLoginCard username={user.username} />}
         </AccordionSection>
       )}
+
+      <AccordionSection title="Zwei-Faktor-Authentifizierung" description="Optional mit einer Authenticator-App absichern" meta="2FA">
+        <TwoFactorCard />
+      </AccordionSection>
 
       <AccordionSection title="Passwort ändern" description="Zugang und andere Anmeldungen absichern" meta="Sicherheit">
         <form onSubmit={password}>

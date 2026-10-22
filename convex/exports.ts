@@ -6,7 +6,7 @@ import { visitRecord } from "./visits";
 import { correctionRecord } from "./corrections";
 import { validDay } from "../lib/export";
 export const page = query({ args: { kind: v.union(v.literal("visits"), v.literal("daily"), v.literal("corrections")), from: v.string(), to: v.string(), paginationOpts: paginationOptsValidator }, handler: async (ctx, args) => {
-  await requireActor(ctx, true);
+  await requireActor(ctx, args.kind !== "daily");
   if (!validDay(args.from) || !validDay(args.to) || args.from > args.to) throw new ConvexError("Ungültiger Zeitraum.");
   const opts = { ...args.paginationOpts, numItems: 100 };
   if (args.kind === "visits") {

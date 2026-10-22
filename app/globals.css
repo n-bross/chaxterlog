@@ -531,6 +531,7 @@
   box-sizing: border-box;
 }
 .auth-card {
+  min-width: 0;
   width: 100%;
   max-width: 380px;
   padding: clamp(24px, 6vw, 32px);
@@ -1661,3 +1662,10 @@ select { background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 
 .qr-frame { position: absolute; inset: 18%; border-radius: 16px; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 0 999px rgba(0, 0, 0, 0.35); animation: qr-breathe 1.8s ease-in-out infinite; }
 @keyframes qr-breathe { 50% { transform: scale(0.97); } }
 .qr-overlay { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 14px; font-weight: 550; background: rgba(0, 0, 0, 0.45); }
+
+.two-factor-card { display: grid; gap: 16px; min-width: 0; }
+.two-factor-card form { display: grid; gap: 12px; }
+.two-factor-secret { display: block; overflow-wrap: anywhere; padding: 12px 0; }
+.backup-codes { padding: 16px; border: 1px solid var(--hairline); border-radius: 12px; white-space: pre-wrap; }
+.two-factor-confirm { display: flex; align-items: flex-start; gap: 10px; }
+.two-factor-confirm input { width: auto; flex: 0 0 auto; margin-top: 4px; }
