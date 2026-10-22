@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { StatisticGraphic } from "./statistic-graphic";
 import type { ChaxterEvent } from "@/lib/events";
 import { analyzeEventDays, type EventDay } from "@/lib/event-analytics";
 
@@ -36,20 +37,20 @@ export default function EventPerformance({ events, days, onSelectDay }: {
       </p>
 
       <div className="insight-grid insight-grid-2">
-        <article className="analytics-panel insight-card">
+        <StatisticGraphic as="article" className="analytics-panel insight-card" title="Event-Tage im Schnitt">
           <h3>Event-Tage im Schnitt</h3>
           <strong>{averageUplift === null ? "Noch kein Vergleich" : `${percent.format(averageUplift)} Besuche`}</strong>
           <p>{averageUplift === null ? "Dafür braucht es Besuche am Event-Tag und an normalen gleichen Wochentagen." : `gegenüber normalen gleichen Wochentagen · ${compared} ${compared === 1 ? "Event-Tag" : "Event-Tage"} verglichen`}</p>
-        </article>
-        <article className="analytics-panel insight-card">
+        </StatisticGraphic>
+        <StatisticGraphic as="article" className="analytics-panel insight-card" title="Stärkstes Event">
           <h3>Stärkstes Event</h3>
           <strong>{best ? titles(best) : "–"}</strong>
           <p>{best ? `${dayLabel(best.date)} · ${best.total} Besuche, ${percent.format(best.uplift!)} gegenüber einem normalen ${weekdayName(best.date)}` : "Erscheint, sobald ein Event-Tag verglichen werden kann."}</p>
-        </article>
+        </StatisticGraphic>
       </div>
 
       {past.length > 0 && (
-        <div className="analytics-panel">
+        <StatisticGraphic className="analytics-panel" title="Alle Event-Tage">
           <div className="analytics-panel-heading">
             <div>
               <h4>Alle Event-Tage</h4>
@@ -79,7 +80,7 @@ export default function EventPerformance({ events, days, onSelectDay }: {
               </li>
             ))}
           </ol>
-        </div>
+        </StatisticGraphic>
       )}
     </section>
   );

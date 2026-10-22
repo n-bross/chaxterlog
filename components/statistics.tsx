@@ -7,15 +7,14 @@ import EventAnalytics from "@/components/event-analytics";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { dayKey } from "@/lib/tracking";
 import { analyzeAggregates, periodRange, previousRange, shiftPeriod, addDays, type Period, type SeriesPoint } from "@/lib/statistics";
-import { exportSummaryGraphic } from "@/lib/chart-export";
+import { StatisticGraphic, DownloadIcon } from "./statistic-graphic";
 import { analyzeEventDays } from "@/lib/event-analytics";
 import type { ChaxterEvent } from "@/lib/events";
 import ComboChart from "./combo-chart";
 
 import { Accordion } from "./interior/accordion";
 import { SegmentedControl } from "./interior/segmented-control";
-import { Modal } from "./interior/modal";
-import { LoadingButton } from "./interior/loading-button";
+import { useAsyncAction } from "./interior/loading-button";
 
 type ViewPeriod = Exclude<Period, "all">;
 const PERIODS: { value: ViewPeriod; label: string }[] = [
@@ -98,18 +97,18 @@ const weekdayName = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateSt
 
 function Highlight({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <article className="highlight-card">
+    <StatisticGraphic as="article" className="highlight-card" title={label}>
       <span className="meta">{label}</span>
       <strong title={value}>{value}</strong>
       <p>{detail}</p>
-    </article>
+    </StatisticGraphic>
   );
 }
 
 const peak = <T extends { u15: number; o15: number }>(rows: T[], group: "u15" | "o15") =>
   rows.reduce<T | null>((best, row) => (row[group] > (best?.[group] ?? 0) ? row : best), null);
 
-export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
+export default function Statistics() {
   const [anchor, setAnchor] = useState("");
   const [today, setToday] = useState("");
   const [customStart, setCustomStart] = useState("");
@@ -123,9 +122,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [error, setError] = useState(false);
 
-  const [exportOpen, setExportOpen] = useState(false);
-  const [exportFrom, setExportFrom] = useState("");
-  const [exportTo, setExportTo] = useState("");
+  const [downloadError, setDownloadError] = useState(false);
 
   useEffect(() => {
     const now = dayKey(); setToday(now); setAnchor(now); setCustomEnd(now); setCustomStart(addDays(now, -29));
@@ -152,7 +149,6 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
 
   const stats = useMemo(() => analyzeAggregates(days, period, activeAnchor, activeCustomEnd), [days, period, activeAnchor, activeCustomEnd]);
   const before = useMemo(() => analyzeAggregates(days, "custom", previous.start, previous.end), [days, previous]);
-  const weekStats = useMemo(() => analyzeAggregates(days, "week", activeAnchor), [days, activeAnchor]);
   // Highlights for the chosen period: the busiest event day, the busiest day and, for a year, the busiest month.
   const bestEvent = useMemo(() => analyzeEventDays(events.filter((e) => e.date >= range.start && e.date <= range.end), days)
     .eventDays.filter((day) => day.total > 0).sort((a, b) => b.total - a.total || b.date.localeCompare(a.date))[0] ?? null, [events, days, range]);
@@ -170,17 +166,15 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
 
   const unitCaption = { hour: "Tag", day: "Tag", month: "Monat", year: "Jahr" }[stats.unit];
   const currentDisplayTitle = rangeTitle(period, activeAnchor, activeCustomEnd);
-  const invalidExportRange = Boolean(exportFrom && exportTo && exportFrom > exportTo);
 
-  async function handleDownload(format: string) {
-    const params = new URLSearchParams({ format });
-    if (exportFrom) params.set("from", exportFrom);
-    if (exportTo) params.set("to", exportTo);
+  async function handleDownload() {
+    setDownloadError(false);
+    const params = new URLSearchParams({ format: "daily", from: range.start, to: range.end });
     const response = await fetch(`/api/admin/export?${params.toString()}`);
     if (!response.ok) throw new Error("Export fehlgeschlagen");
     const blob = await response.blob();
     const disposition = response.headers.get("Content-Disposition");
-    let filename = `chaxterlog-${format}${exportFrom ? `-${exportFrom}` : ""}${exportTo ? `-bis-${exportTo}` : ""}.${format === "json" ? "json" : "csv"}`;
+    let filename = `chaxterlog-${range.start}-${range.end}.csv`;
     const match = disposition?.match(/filename="?([^";]+)"?/);
     if (match?.[1]) filename = match[1];
     const url = URL.createObjectURL(blob);
@@ -193,13 +187,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  // Verlauf: a day is shown within its week; other periods by day, month or year.
-  const trendRows = useMemo(() => (period === "day" ? weekStats.series : stats.series).map((item) => ({
-    ...item,
-    label: period === "day" && item.key === anchor ? `${item.label} (gewählt)` : item.label,
-    value: item.total,
-    detail: `U15 ${item.u15}, Ü15 ${item.o15}`,
-  })), [period, anchor, weekStats.series, stats.series]);
+  const download = useAsyncAction({ action: handleDownload, onError: () => setDownloadError(true) });
 
   const weekdayRows = useMemo(() => stats.weekdays.filter((day) => day.days > 0).map((day) => ({
     ...day,
@@ -218,15 +206,15 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
         </Link>
         <h1>Statistik</h1>
         <div className="statistics-header-right">
-          <button type="button" className="icon-button statistics-export-btn" aria-label="Daten & Grafiken herunterladen" title="Daten & Grafiken herunterladen"
-            onClick={() => { setExportFrom(range.start); setExportTo(range.end); setExportOpen(true); }}>
-            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3v12m-5-5 5 5 5-5M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
-            </svg>
+          <button type="button" className="icon-button statistics-export-btn" aria-label="Ausgewählten Zeitraum als CSV herunterladen" title="Ausgewählten Zeitraum als CSV herunterladen"
+            disabled={!loaded || error || download.pending} aria-busy={download.pending} onClick={download.run}>
+            <DownloadIcon />
           </button>
           <span className="meta" title="Zeitpunkt, zu dem die Werte geladen wurden">{loaded && loadedAt ? `Stand ${loadedAt.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}` : "Lädt …"}</span>
         </div>
       </header>
+
+      {downloadError && <p role="alert" className="error-message">CSV konnte nicht heruntergeladen werden. Bitte erneut versuchen.</p>}
 
       <SegmentedControl className="period-switch" label="Zeitraum" options={PERIODS} value={period} onValueChange={(value) => setPeriod(value as ViewPeriod)} />
 
@@ -261,24 +249,24 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
       ) : (
         <>
           <section aria-label="Besuche im Zeitraum" className="statistics-totals">
-            <div className="counter-blue">
+            <StatisticGraphic className="counter-blue" title="U15" subtitle={currentDisplayTitle} disabled={!loaded}>
               <span>U15</span>
               <strong>{loaded ? number.format(stats.counts.u15) : "–"}</strong>
               <small>{loaded && stats.total ? `${percent.format(share(stats.counts.u15, stats.total))} der Besuche` : "\u00a0"}</small>
-            </div>
-            <div className="counter-yellow">
+            </StatisticGraphic>
+            <StatisticGraphic className="counter-yellow" title="Ü15" subtitle={currentDisplayTitle} disabled={!loaded}>
               <span>Ü15</span>
               <strong>{loaded ? number.format(stats.counts.o15) : "–"}</strong>
               <small>{loaded && stats.total ? `${percent.format(share(stats.counts.o15, stats.total))} der Besuche` : "\u00a0"}</small>
-            </div>
-            <div className="statistics-total">
+            </StatisticGraphic>
+            <StatisticGraphic className="statistics-total" title="Gesamt" subtitle={currentDisplayTitle} disabled={!loaded}>
               <span>Gesamt</span>
               <strong>{loaded ? number.format(stats.total) : "–"}</strong>
               <small className="total-change" data-tone={change_ === null ? "none" : change_ > 0.02 ? "up" : change_ < -0.02 ? "down" : "flat"}
                 title={`Verglichen mit ${shortDate(previous.start)}${previous.end !== previous.start ? ` – ${shortDate(previous.end)}` : ""}`}>
                 {!loaded ? "\u00a0" : change_ === null ? `${previous.label}: keine Besuche` : `${change.format(change_)} gegenüber ${previous.label}`}
               </small>
-            </div>
+            </StatisticGraphic>
           </section>
 
           {loaded && (stats.recordedDays > 0 || stats.undated.total > 0) && (
@@ -310,7 +298,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
               )}
 
               {period !== "day" && (
-                <section className="analytics-panel statistics-panel" aria-label="Besuche im Zeitraum">
+                <StatisticGraphic as="section" className="analytics-panel statistics-panel" title={`Besuche pro ${unitCaption}`} subtitle={currentDisplayTitle}>
                   <div className="analytics-panel-heading">
                     <div>
                       <h3>Besuche pro {unitCaption}</h3>
@@ -318,12 +306,12 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
                     </div>
                   </div>
                   <ComboChart label={`Besuche pro ${unitCaption}, ${currentDisplayTitle}`} points={chartPoints} />
-                </section>
+                </StatisticGraphic>
               )}
 
               {period !== "day" && (
                 <FoldedSection title="Wochentage" description="An welchem Tag kommt welches Alter?">
-                  <section className="age-section" aria-label="Besuche nach Wochentag">
+                  <StatisticGraphic as="section" className="age-section" title="Besuche nach Wochentag" subtitle={currentDisplayTitle}>
                     <div className="analytics-panel-heading">
                       <p>
                         {dayU15 && <>U15 kommen am häufigsten {dayU15.label.toLowerCase()}s. </>}
@@ -335,7 +323,7 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
                     <h4 className="chart-title">{ageMode === "count" ? "Ø Besuche pro Öffnungstag" : "Anteil U15"}</h4>
                     <Bars mode={ageMode} label="Besuche nach Wochentag" rows={weekdayRows} />
                     <Legend />
-                  </section>
+                  </StatisticGraphic>
                 </FoldedSection>
               )}
             </>
@@ -347,62 +335,6 @@ export default function Statistics({ isAdmin }: { isAdmin: boolean }) {
         </>
       )}
 
-      <Modal
-        open={exportOpen}
-        onClose={() => setExportOpen(false)}
-        title="Daten & Grafiken herunterladen"
-        description={isAdmin ? "Listen und Sicherungen für den gewählten Zeitraum herunterladen." : "Liste für den gewählten Zeitraum oder die Auswertung als Grafik herunterladen."}
-        maxWidth={500}
-      >
-        <div className="download-modal-body">
-          <div className="form-row">
-            <label>Von<input type="date" value={exportFrom} onChange={(e) => setExportFrom(e.target.value)} /></label>
-            <label>Bis<input type="date" value={exportTo} onChange={(e) => setExportTo(e.target.value)} /></label>
-          </div>
-          <div className="download-preset-chips">
-            <button type="button" className="download-chip" onClick={() => { setExportFrom(range.start); setExportTo(range.end); }}>Gewählter Zeitraum ({currentDisplayTitle})</button>
-            <button type="button" className="download-chip" onClick={() => { setExportFrom(""); setExportTo(""); }}>Alle Daten</button>
-          </div>
-
-          {invalidExportRange ? (
-            <p role="alert" className="error-message">Das Enddatum liegt vor dem Anfangsdatum.</p>
-          ) : (
-            <>
-              <div className="download-section-heading meta">Daten herunterladen</div>
-              <p className="muted">Die Liste enthält je Tag U15, Ü15 und Gesamt für den oben gewählten Zeitraum.</p>
-              <div className="button-row download-button-group">
-                <LoadingButton className="primary-button" onAction={() => handleDownload("daily")} pendingLabel="Erstelle CSV …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Liste (CSV)</LoadingButton>
-                {isAdmin && <LoadingButton className="secondary-button" onAction={() => handleDownload("csv")} pendingLabel="Erstelle CSV …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Einzelbesuche (CSV)</LoadingButton>}
-                {isAdmin && <LoadingButton className="secondary-button" onAction={() => handleDownload("json")} pendingLabel="Erstelle JSON …" successLabel="Heruntergeladen" errorLabel="Fehlgeschlagen">Sicherung (JSON)</LoadingButton>}
-              </div>
-              <div className="download-section-heading meta">Grafik</div>
-              <div className="button-row">
-                <LoadingButton
-                  className="secondary-button w-full"
-                  onAction={async () => {
-                    exportSummaryGraphic({
-                      title: "ChaxterLog Statistik",
-                      subtitle: currentDisplayTitle,
-                      counts: { ...stats.counts, total: stats.total },
-                      average: stats.average,
-                      recordedDays: stats.recordedDays,
-                      trendRows,
-                      trendUnitCaption: unitCaption,
-                      weekdays: stats.weekdays,
-                      topDays: stats.topDays?.map((d) => ({ key: d.key, total: d.total, u15: d.u15, o15: d.o15 })),
-                    }, `chaxterlog-grafik-${range.start}.png`);
-                  }}
-                  pendingLabel="Erstelle Grafik …"
-                  successLabel="Heruntergeladen"
-                  errorLabel="Fehlgeschlagen"
-                >
-                  Statistik-Grafik (PNG)
-                </LoadingButton>
-              </div>
-            </>
-          )}
-        </div>
-      </Modal>
     </main>
   );
 }
