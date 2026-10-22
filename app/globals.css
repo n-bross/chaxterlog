@@ -1669,3 +1669,29 @@ select { background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 
 .backup-codes { padding: 16px; border: 1px solid var(--hairline); border-radius: 12px; white-space: pre-wrap; }
 .two-factor-confirm { display: flex; align-items: flex-start; gap: 10px; }
 .two-factor-confirm input { width: auto; flex: 0 0 auto; margin-top: 4px; }
+
+.statistic-graphic { position: relative; }
+.statistic-graphic > .statistic-download {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  background: var(--cap);
+  box-shadow: var(--shadow-cap);
+}
+/* Reserve the corner so the button never covers headings or chart controls. */
+.statistic-graphic > .analytics-panel-heading,
+.statistic-graphic > h3,
+.statistic-graphic > .meta,
+.statistics-totals > .statistic-graphic > span { padding-right: 30px; }
+@media (hover: hover) and (pointer: fine) {
+  .statistic-download { opacity: 0; pointer-events: none; }
+  .statistic-graphic:hover > .statistic-download,
+  .statistic-graphic:focus-within > .statistic-download,
+  .statistic-graphic > .statistic-download[aria-busy="true"] { opacity: 1; pointer-events: auto; }
+}
