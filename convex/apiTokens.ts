@@ -63,7 +63,8 @@ async function tokenActor(ctx: QueryCtx, tokenHash: string) {
 async function counts(ctx: QueryCtx, date: string) {
   const daily = await ctx.db.query("dailyCounts").withIndex("date", (q) => q.eq("date", date)).unique();
   const u15 = daily?.u15 ?? 0, o15 = daily?.o15 ?? 0;
-  return { date, u15, o15, total: u15 + o15 };
+  // Lets widgets show how long a change took to reach them.
+  return { date, u15, o15, total: u15 + o15, updatedAt: daily?.updatedAt ? new Date(daily.updatedAt).toISOString() : null };
 }
 
 const label = (value: AgeGroup) => value === "u15" ? "U15" : "Ü15";

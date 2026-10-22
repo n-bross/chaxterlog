@@ -78,7 +78,7 @@ export async function applyRecords(ctx: MutationCtx, actor: { id: string; userna
       const id = await ctx.db.insert("dailyCounts", { date, u15: 0, o15: 0, cancelled: 0, revision: 0 });
       daily = (await ctx.db.get(id))!;
     }
-    if (changed) await ctx.db.patch(daily._id, { [old.group]: daily[old.group] + delta, cancelled: daily.cancelled + cancelDelta, revision });
+    if (changed) await ctx.db.patch(daily._id, { [old.group]: daily[old.group] + delta, cancelled: daily.cancelled + cancelDelta, revision, updatedAt: Date.now() });
     if (delta) {
       const hours = await ctx.db.query("dailyHours").withIndex("date", (q) => q.eq("date", date)).unique();
       const next = updateAggregate(hours ? { date, u15: daily.u15, o15: daily.o15, u: hours.u, o: hours.o } : null, old.timestamp, old.group, delta);

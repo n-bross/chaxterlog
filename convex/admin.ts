@@ -100,7 +100,7 @@ export const deleteEntriesBatch = internalMutation({ args: { userId: v.string(),
   }
   // A new revision makes every open counter replace its local copy of these days.
   for (const day of days.values()) {
-    if (day.daily) await ctx.db.patch(day.daily._id, { u15: day.u15, o15: day.o15, cancelled: day.cancelled, revision: day.daily.revision + 1 });
+    if (day.daily) await ctx.db.patch(day.daily._id, { u15: day.u15, o15: day.o15, cancelled: day.cancelled, revision: day.daily.revision + 1, updatedAt: Date.now() });
     if (day.hours) await ctx.db.patch(day.hours._id, { u: day.u, o: day.o });
   }
   return { deleted: visits.length, done: visits.length < 200 };

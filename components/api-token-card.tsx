@@ -53,7 +53,7 @@ export default function ApiTokenCard() {
   return (
     <div className="api-tokens">
       <p className="muted">
-        Mit einem persönlichen Token zählst du per Apple Kurzbefehl, Scriptable-Widget oder der Android-App „HTTP Shortcuts“, ohne die App zu öffnen.
+        Mit einem persönlichen Token zählst du per Apple Kurzbefehl, Scriptable-Widget oder der Android-App „HTTP Shortcuts“ direkt vom Home-Bildschirm.
         Klicks erscheinen unter deinem Namen und dem Gerätenamen des Tokens. Behandle den Token wie ein Passwort.
       </p>
 

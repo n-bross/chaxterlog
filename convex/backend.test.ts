@@ -189,6 +189,7 @@ describe("Kurzbefehl-API", () => {
     const added = await (await send(t, "/api/v1/visit", token, { group: "Ü15" })).json();
     expect([added.u15, added.o15, added.total]).toEqual([1, 1, 2]);
     expect(added.text).toContain("Ü15 +1");
+    expect(Date.parse(added.updatedAt)).toBeGreaterThan(0);
     const live = await staff.as.query(api.visits.live, { date: added.date });
     expect([live.u15, live.o15]).toEqual([1, 1]);
 

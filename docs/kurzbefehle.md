@@ -66,16 +66,21 @@ Wo die Knöpfe liegen können:
 - **Rückseite tippen**, gut geeignet für Rückgängig: Einstellungen → Bedienungshilfen → Tippen → Auf Rückseite tippen → Doppeltippen → Kurzbefehl „Rückgängig“.
 - **Siri**: startet jeden Kurzbefehl über seinen Namen, z. B. „Hey Siri, U15 plus eins“, wenn der Kurzbefehl so heißt.
 
-## 4. iPhone: Zahlen im Widget (Scriptable)
+## 4. iPhone: Zähl-Widget mit Scriptable
 
-Das Kurzbefehle-Widget zeigt nur Knöpfe, keine Zahlen. Für die Anzeige:
+Ein mittelgroßes Widget mit drei Knöpfen: **U15** und **Ü15** zeigen jeweils den Tagesstand und zählen beim Tippen +1, **↶** nimmt deinen letzten eigenen Klick von heute zurück. Unten stehen Gesamtzahl und Uhrzeit der letzten Änderung im Team, oben die Uhrzeit, zu der das Widget zuletzt geladen hat.
 
 1. [Scriptable](https://apps.apple.com/app/scriptable/id1405459188) installieren (kostenlos).
 2. In ChaxterLog nach dem Erstellen des Tokens **Scriptable-Widget kopieren** tippen. Das Skript enthält Adresse und Token bereits.
 3. Scriptable → **+** → einfügen → oben „ChaxterLog“ als Namen eintragen.
-4. Auf dem Home-Bildschirm ein kleines **Scriptable**-Widget hinzufügen → gedrückt halten → **Widget bearbeiten** → Script: „ChaxterLog“.
+4. Auf dem Home-Bildschirm ein **mittleres** Scriptable-Widget hinzufügen → gedrückt halten → **Widget bearbeiten** → Script: „ChaxterLog“, „Bei Interaktion“: **URL öffnen** lassen.
 
-Das Widget zeigt U15, Ü15, Gesamt und die Uhrzeit des Stands. Ein Tipp darauf öffnet ChaxterLog. Wie oft das Widget aktualisiert wird, bestimmt iOS, meist etwa alle 5–15 Minuten. Den aktuellen Stand liefert jeder Zähl-Kurzbefehl sofort in seiner Mitteilung.
+Grenzen, die iOS vorgibt:
+
+- **Ein Tipp öffnet kurz die Scriptable-App.** Scriptable-Widgets können nur Links öffnen. Der Knopf startet das Skript in der App, es zählt und zeigt den neuen Stand als Mitteilung. Danach zurück zum Home-Bildschirm wischen. Knöpfe, die direkt im Widget arbeiten, gibt es nur mit einer eigenen iOS-App.
+- **Wie oft das Widget neu lädt, bestimmt iOS.** `refreshAfterDate` ist nur ein Wunsch. Änderungen von anderen erscheinen erst beim nächsten Neuladen.
+
+**Refresh-Geschwindigkeit messen:** Das Skript protokolliert jedes Neuladen des Widgets und jeden Tipp. Das Skript direkt in Scriptable starten → **Refresh-Protokoll** zeigt Uhrzeit, Abstand zum vorherigen Eintrag, Stand und Quelle. Für den Test zählt jemand anderes in der App. Die Differenz zwischen „geändert“ im Widget und dem Zeitpunkt, zu dem der neue Stand erscheint, ist die Verzögerung.
 
 **Widgy** funktioniert ebenfalls: als Datenquelle JSON von `…/api/v1/today?token=chx_…` mit den Feldern `u15`, `o15` und `total`. Die Knöpfe laufen weiter über Kurzbefehle.
 
