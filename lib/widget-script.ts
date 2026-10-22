@@ -1,11 +1,11 @@
 // Scriptable (iOS) home-screen widget: U15 +1, Ü15 +1 and Undo, with today's totals on the buttons.
 // The token is embedded, so the generated script must be treated like a password.
-export function scriptableWidget(origin: string, token: string) {
+export function scriptableWidget(apiOrigin: string, appOrigin: string, token: string) {
   return `// ChaxterLog – Zähl-Widget für Scriptable (mittlere Größe)
 // Enthält deinen persönlichen Token: nicht weitergeben.
-const BASE = ${JSON.stringify(`${origin}/api/v1`)};
+const BASE = ${JSON.stringify(`${apiOrigin}/api/v1`)};
 const TOKEN = ${JSON.stringify(token)};
-const APP = ${JSON.stringify(origin)};
+const APP = ${JSON.stringify(appOrigin)};
 
 const PETROL = new Color("#00698c"), DEEP = new Color("#004f6a"), YELLOW = new Color("#fffd24");
 const files = FileManager.local();

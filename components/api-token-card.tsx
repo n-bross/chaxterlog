@@ -11,6 +11,9 @@ import { CopyButton } from "./interior/copy-button";
 
 type Token = { id: Id<"apiTokens">; name: string; hint: string; createdAt: number; lastUsedAt: number | null };
 const date = (value: number) => new Date(value).toLocaleString("de-DE", { timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+// A local dev server is unreachable from a phone, so tokens created there talk to Convex directly.
+const convexSite = process.env.NEXT_PUBLIC_CONVEX_SITE_URL ?? process.env.NEXT_PUBLIC_CONVEX_URL?.replace(/\.convex\.cloud$/, ".convex.site");
+const apiOrigin = (origin: string) => origin.startsWith("http://") && convexSite ? convexSite : origin;
 const message = (error: unknown, fallback: string) => error instanceof ConvexError ? String(error.data) : fallback;
 
 export default function ApiTokenCard() {
@@ -49,7 +52,7 @@ export default function ApiTokenCard() {
     finally { setBusy(null); }
   }
 
-  const base = `${origin}/api/v1`;
+  const base = `${apiOrigin(origin)}/api/v1`;
   return (
     <div className="api-tokens">
       <p className="muted">
@@ -69,7 +72,7 @@ export default function ApiTokenCard() {
             <dt>Anmeldung</dt><dd>Header <code>Authorization: Bearer &lt;Token&gt;</code></dd>
           </dl>
           <div className="button-row">
-            <CopyButton value={scriptableWidget(origin, created.token)} label="Scriptable-Widget kopieren" />
+            <CopyButton value={scriptableWidget(apiOrigin(origin), origin, created.token)} label="Scriptable-Widget kopieren" />
             <button type="button" className="secondary-button" onClick={() => setCreated(null)}>Fertig</button>
           </div>
         </div>
