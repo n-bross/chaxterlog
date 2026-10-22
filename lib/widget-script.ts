@@ -23,7 +23,10 @@ async function call(path, method, body) {
 }
 
 // Every widget refresh and tap is logged, to measure how fast iOS refreshes the widget.
-function readLog() { try { return JSON.parse(files.readString(LOG)); } catch (error) { return []; } }
+// readString returns null for a missing file, so the first run starts with an empty log.
+function readLog() {
+  try { const entries = JSON.parse(files.readString(LOG)); return Array.isArray(entries) ? entries : []; } catch (error) { return []; }
+}
 function log(kind, data) {
   const entries = readLog();
   entries.unshift({ at: new Date().toISOString(), kind, u15: data.u15, o15: data.o15, updatedAt: data.updatedAt || null, error: data.error || null });
