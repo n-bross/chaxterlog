@@ -1,11 +1,10 @@
-// Scriptable (iOS) home-screen widget: U15 +1, Ü15 +1 and Undo, with today's totals on the buttons.
+// Scriptable (iOS) home-screen and lock-screen widget: U15 +1, Ü15 +1 and Undo, with today's totals on the buttons.
 // The token is embedded, so the generated script must be treated like a password.
-export function scriptableWidget(apiOrigin: string, appOrigin: string, token: string) {
-  return `// ChaxterLog – Zähl-Widget für Scriptable (mittlere Größe)
+export function scriptableWidget(apiOrigin: string, token: string) {
+  return `// ChaxterLog – Zähl-Widget für Scriptable (Home- & Sperrbildschirm)
 // Enthält deinen persönlichen Token: nicht weitergeben.
 const BASE = ${JSON.stringify(`${apiOrigin}/api/v1`)};
 const TOKEN = ${JSON.stringify(token)};
-const APP = ${JSON.stringify(appOrigin)};
 
 const PETROL = new Color("#00698c"), DEEP = new Color("#004f6a"), YELLOW = new Color("#fffd24");
 const files = FileManager.local();
@@ -23,7 +22,10 @@ async function call(path, method, body) {
 }
 
 // Every widget refresh and tap is logged, to measure how fast iOS refreshes the widget.
-function readLog() { try { return JSON.parse(files.readString(LOG)); } catch (error) { return []; } }
+// readString returns null for a missing file, so the first run starts with an empty log.
+function readLog() {
+  try { const entries = JSON.parse(files.readString(LOG)); return Array.isArray(entries) ? entries : []; } catch (error) { return []; }
+}
 function log(kind, data) {
   const entries = readLog();
   entries.unshift({ at: new Date().toISOString(), kind, u15: data.u15, o15: data.o15, updatedAt: data.updatedAt || null, error: data.error || null });
@@ -40,26 +42,64 @@ function button(row, width, title, value, action, color) {
   box.cornerRadius = 16;
   box.backgroundColor = color;
   box.url = runUrl(action);
-  const head = box.addText(title);
+  // Each text also carries the link, so taps on the label hit the button too.
+  const link = (text) => { text.url = box.url; return text; };
+  const head = link(box.addText(title));
   head.font = action === "undo" ? Font.boldSystemFont(24) : Font.semiboldSystemFont(13);
   head.textColor = new Color("#ffffff", 0.8);
   box.addSpacer();
   if (value !== null) {
-    const number = box.addText(String(value));
+    const number = link(box.addText(String(value)));
     number.font = Font.boldRoundedSystemFont(32);
     number.textColor = Color.white();
     number.minimumScaleFactor = 0.5;
   }
-  const hint = box.addText(action === "undo" ? "zurück" : "+1");
+  const hint = link(box.addText(action === "undo" ? "zurück" : "+1"));
   hint.font = Font.semiboldSystemFont(12);
   hint.textColor = YELLOW;
 }
 
 function widget(data) {
+  // Lock Screen widget support (iOS 16+)
+  if (config.widgetFamily === "accessoryRectangular") {
+    const lock = new ListWidget();
+    lock.setPadding(0, 0, 0, 0);
+    const header = lock.addText("ChaxterLog");
+    header.font = Font.boldSystemFont(12);
+    header.textColor = Color.white();
+    lock.addSpacer(2);
+    const numbers = lock.addText("U15: " + (data.u15 ?? 0) + "  ·  Ü15: " + (data.o15 ?? 0));
+    numbers.font = Font.systemFont(13);
+    numbers.textColor = Color.white();
+    lock.addSpacer(2);
+    const foot = lock.addText("Gesamt: " + (data.total ?? 0));
+    foot.font = Font.semiboldSystemFont(11);
+    foot.textColor = new Color("#ffffff", 0.7);
+    lock.refreshAfterDate = new Date(Date.now() + 60 * 1000);
+    return lock;
+  }
+  if (config.widgetFamily === "accessoryInline") {
+    const lock = new ListWidget();
+    lock.addText("ChaxterLog " + (data.u15 ?? 0) + " / " + (data.o15 ?? 0) + " (" + (data.total ?? 0) + ")");
+    lock.refreshAfterDate = new Date(Date.now() + 60 * 1000);
+    return lock;
+  }
+  if (config.widgetFamily === "accessoryCircular") {
+    const lock = new ListWidget();
+    const num = lock.addText(String(data.total ?? 0));
+    num.font = Font.boldRoundedSystemFont(20);
+    num.centerAlignText();
+    const sub = lock.addText((data.u15 ?? 0) + "/" + (data.o15 ?? 0));
+    sub.font = Font.systemFont(9);
+    sub.centerAlignText();
+    lock.refreshAfterDate = new Date(Date.now() + 60 * 1000);
+    return lock;
+  }
+
   const w = new ListWidget();
   w.backgroundColor = new Color("#f7f7f6");
   w.setPadding(12, 12, 12, 12);
-  w.url = APP;
+  // No widget-wide URL: it would take precedence over the buttons on some iOS versions.
   const top = w.addStack();
   top.centerAlignContent();
   const title = top.addText("ChaxterLog");
@@ -70,6 +110,8 @@ function widget(data) {
   stamp.font = Font.systemFont(11);
   stamp.textColor = new Color("#6f6f6f");
   w.addSpacer(8);
+  // Small widgets have a single tap target, so the three buttons need the medium size.
+  if (config.widgetFamily === "small") data = { error: "small", text: "Bitte das Widget in mittlerer Größe hinzufügen." };
   if (data.error) {
     const message = w.addText(data.text || data.error);
     message.font = Font.systemFont(13);

@@ -72,7 +72,7 @@ export default function ApiTokenCard() {
             <dt>Anmeldung</dt><dd>Header <code>Authorization: Bearer &lt;Token&gt;</code></dd>
           </dl>
           <div className="button-row">
-            <CopyButton value={scriptableWidget(apiOrigin(origin), origin, created.token)} label="Scriptable-Widget kopieren" />
+            <CopyButton value={scriptableWidget(apiOrigin(origin), created.token)} label="Scriptable-Widget kopieren" />
             <button type="button" className="secondary-button" onClick={() => setCreated(null)}>Fertig</button>
           </div>
         </div>
