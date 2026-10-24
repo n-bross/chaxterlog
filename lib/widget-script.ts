@@ -1,7 +1,7 @@
-// Scriptable (iOS) home-screen widget: U15 +1, Ü15 +1 and Undo, with today's totals on the buttons.
+// Scriptable (iOS) home-screen and lock-screen widget: U15 +1, Ü15 +1 and Undo, with today's totals on the buttons.
 // The token is embedded, so the generated script must be treated like a password.
 export function scriptableWidget(apiOrigin: string, token: string) {
-  return `// ChaxterLog – Zähl-Widget für Scriptable (mittlere Größe)
+  return `// ChaxterLog – Zähl-Widget für Scriptable (Home- & Sperrbildschirm)
 // Enthält deinen persönlichen Token: nicht weitergeben.
 const BASE = ${JSON.stringify(`${apiOrigin}/api/v1`)};
 const TOKEN = ${JSON.stringify(token)};
@@ -60,6 +60,42 @@ function button(row, width, title, value, action, color) {
 }
 
 function widget(data) {
+  // Lock Screen widget support (iOS 16+)
+  if (config.widgetFamily === "accessoryRectangular") {
+    const lock = new ListWidget();
+    lock.setPadding(0, 0, 0, 0);
+    const header = lock.addText("ChaxterLog");
+    header.font = Font.boldSystemFont(12);
+    header.textColor = Color.white();
+    lock.addSpacer(2);
+    const numbers = lock.addText("U15: " + (data.u15 ?? 0) + "  ·  Ü15: " + (data.o15 ?? 0));
+    numbers.font = Font.systemFont(13);
+    numbers.textColor = Color.white();
+    lock.addSpacer(2);
+    const foot = lock.addText("Gesamt: " + (data.total ?? 0));
+    foot.font = Font.semiboldSystemFont(11);
+    foot.textColor = new Color("#ffffff", 0.7);
+    lock.refreshAfterDate = new Date(Date.now() + 60 * 1000);
+    return lock;
+  }
+  if (config.widgetFamily === "accessoryInline") {
+    const lock = new ListWidget();
+    lock.addText("ChaxterLog " + (data.u15 ?? 0) + " / " + (data.o15 ?? 0) + " (" + (data.total ?? 0) + ")");
+    lock.refreshAfterDate = new Date(Date.now() + 60 * 1000);
+    return lock;
+  }
+  if (config.widgetFamily === "accessoryCircular") {
+    const lock = new ListWidget();
+    const num = lock.addText(String(data.total ?? 0));
+    num.font = Font.boldRoundedSystemFont(20);
+    num.centerAlignText();
+    const sub = lock.addText((data.u15 ?? 0) + "/" + (data.o15 ?? 0));
+    sub.font = Font.systemFont(9);
+    sub.centerAlignText();
+    lock.refreshAfterDate = new Date(Date.now() + 60 * 1000);
+    return lock;
+  }
+
   const w = new ListWidget();
   w.backgroundColor = new Color("#f7f7f6");
   w.setPadding(12, 12, 12, 12);
