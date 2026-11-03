@@ -6,8 +6,54 @@ export const PFAND = [
   { key: "wasser", label: "Wasser", cents: 50 },
 ] as const;
 export type PfandKey = (typeof PFAND)[number]["key"];
-export type PfandCounts = Record<PfandKey, number>;
-export const NO_PFAND: PfandCounts = { getraenk: 0, wasser: 0 };
+export const pfandOf = (key: PfandKey | null | undefined) => PFAND.find((item) => item.key === key)?.cents ?? 0;
+
+/** A quick button: a fixed amount, optionally with deposit added for the customer. Not an article: only the amount is booked. */
+export type KasseButton = { id: string; label: string; priceCents: number; pfand: PfandKey | null };
+// Examples until the team enters its own prices on the page.
+export const DEFAULT_BUTTONS: KasseButton[] = [
+  { id: "b-050", label: "0,50 €", priceCents: 50, pfand: null },
+  { id: "b-100", label: "1,00 €", priceCents: 100, pfand: null },
+  { id: "b-150", label: "1,50 €", priceCents: 150, pfand: null },
+  { id: "b-200", label: "2,00 €", priceCents: 200, pfand: null },
+  { id: "d-getraenk", label: "Getränk", priceCents: 150, pfand: "getraenk" },
+  { id: "d-wasser", label: "Wasser", priceCents: 100, pfand: "wasser" },
+];
+export const MAX_BUTTONS = 40;
+export function validateButtons(buttons: KasseButton[]): string | null {
+  if (buttons.length > MAX_BUTTONS) return `Höchstens ${MAX_BUTTONS} Knöpfe.`;
+  const ids = new Set<string>();
+  for (const b of buttons) {
+    if (!b.id || b.id.length > 40 || ids.has(b.id)) return "Ungültige Knopf-ID.";
+    ids.add(b.id);
+    if (!b.label.trim() || b.label.length > 30) return "Jeder Knopf braucht einen Namen (max. 30 Zeichen).";
+    if (!Number.isSafeInteger(b.priceCents) || b.priceCents < 1 || b.priceCents > MAX_SALE_CENTS) return `Ungültiger Preis bei „${b.label}“.`;
+    if (b.pfand !== null && !PFAND.some((item) => item.key === b.pfand)) return "Ungültiges Pfand.";
+  }
+  return null;
+}
+
+// The current customer's receipt. Deposit lines have no till amount; bottle returns are negative deposit.
+export type CartLine = { key: string; label: string; tillCents: number; pfandCents: number; count: number };
+export type CartItem = Omit<CartLine, "count">;
+export function cartAdd(cart: CartLine[], item: CartItem): CartLine[] {
+  const found = cart.find((line) => line.key === item.key);
+  return found ? cart.map((line) => line === found ? { ...line, count: line.count + 1 } : line) : [...cart, { ...item, count: 1 }];
+}
+export function cartRemove(cart: CartLine[], key: string): CartLine[] {
+  return cart.flatMap((line) => line.key !== key ? [line] : line.count > 1 ? [{ ...line, count: line.count - 1 }] : []);
+}
+export const buttonItem = (b: KasseButton): CartItem => ({ key: `btn:${b.id}`, label: b.label, tillCents: b.priceCents, pfandCents: pfandOf(b.pfand) });
+export const returnItem = (key: PfandKey): CartItem => ({ key: `ret:${key}`, label: `${PFAND.find((p) => p.key === key)!.label}-Flasche zurück`, tillCents: 0, pfandCents: -pfandOf(key) });
+export const customItem = (cents: number): CartItem => ({ key: `custom:${cents}`, label: "Betrag", tillCents: cents, pfandCents: 0 });
+
+/** What the customer pays, what goes into the till, and what goes into / out of the deposit box. */
+export function cartTotals(cart: CartLine[], givenCents?: number | null) {
+  const till = cart.reduce((sum, line) => sum + line.tillCents * line.count, 0);
+  const deposit = cart.reduce((sum, line) => sum + line.pfandCents * line.count, 0);
+  const customerPays = till + deposit;
+  return { till, deposit, customerPays, change: givenCents == null ? null : givenCents - customerPays };
+}
 
 export const MAX_SALE_CENTS = 100_000; // 1.000 € per booking catches a slipped finger
 export const MAX_CASH_CENTS = 10_000_000;
@@ -40,16 +86,6 @@ export function keypadPress(state: Keypad, key: string): Keypad {
   return state;
 }
 export function keypadTotal(state: Keypad) { return state.parts.reduce((sum, part) => sum + part, 0) + state.current; }
-
-export function pfandCents(counts: PfandCounts) { return PFAND.reduce((sum, item) => sum + item.cents * counts[item.key], 0); }
-
-/** What the customer pays, what goes into the till, and what goes into / out of the deposit box. */
-export function checkout(amountCents: number, pfand: PfandCounts, givenCents?: number | null) {
-  const deposit = pfandCents(pfand);
-  const customerPays = amountCents + deposit;
-  const change = givenCents == null ? null : givenCents - customerPays;
-  return { till: amountCents, deposit, customerPays, change };
-}
 
 /** Fewest notes and coins for an amount, largest first. */
 export function changeBreakdown(cents: number) {

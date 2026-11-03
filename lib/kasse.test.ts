@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { changeBreakdown, checkout, countedTotal, EMPTY_KEYPAD, keypadPress, keypadTotal, nextSeq, parseEuro, pendingOps, pushOps, readOps, saveOp, sessionView, StorageFailure, type KasseOp, type OpAck } from "./kasse.ts";
+import { buttonItem, cartAdd, cartRemove, cartTotals, changeBreakdown, countedTotal, customItem, returnItem, validateButtons, DEFAULT_BUTTONS, EMPTY_KEYPAD, keypadPress, keypadTotal, nextSeq, parseEuro, pendingOps, pushOps, readOps, saveOp, sessionView, StorageFailure, type KasseOp, type OpAck } from "./kasse.ts";
 
 function storageMock(failWrites = false): Storage {
   const data = new Map<string, string>();
@@ -22,12 +22,23 @@ test("keypad shifts digits in like a till and adds parts", () => {
   assert.equal(keypadTotal(keypadPress(k, "clear")), 0);
 });
 
-test("deposit is added for the customer but never goes into the till", () => {
-  const r = checkout(450, { getraenk: 2, wasser: 1 }, 1000);
-  assert.deepEqual(r, { till: 450, deposit: 250, customerPays: 700, change: 300 });
-  const back = checkout(200, { getraenk: -1, wasser: 0 }, null);
-  assert.equal(back.customerPays, 100, "returned bottles reduce what the customer pays");
-  assert.equal(back.till, 200);
+test("drink buttons add deposit for the customer but only the price goes into the till", () => {
+  const drink = { id: "cola", label: "Cola", priceCents: 200, pfand: "getraenk" as const }, water = { id: "w", label: "Wasser", priceCents: 100, pfand: "wasser" as const };
+  let cart = cartAdd(cartAdd(cartAdd([], buttonItem(drink)), buttonItem(drink)), buttonItem(water));
+  assert.equal(cart.length, 2, "same button twice is one line with count 2");
+  assert.deepEqual(cartTotals(cart, 1000), { till: 500, deposit: 250, customerPays: 750, change: 250 });
+  cart = cartAdd(cart, returnItem("getraenk"));
+  assert.deepEqual(cartTotals(cart, null), { till: 500, deposit: 150, customerPays: 650, change: null });
+  cart = cartAdd(cartRemove(cart, "btn:cola"), customItem(80));
+  assert.equal(cartTotals(cart).till, 380);
+  assert.deepEqual(cartTotals(cartAdd([], returnItem("wasser"))), { till: 0, deposit: -50, customerPays: -50, change: null });
+});
+
+test("button settings are validated", () => {
+  assert.equal(validateButtons(DEFAULT_BUTTONS), null);
+  assert.match(validateButtons([{ id: "a", label: "", priceCents: 100, pfand: null }])!, /Namen/);
+  assert.match(validateButtons([{ id: "a", label: "X", priceCents: 0, pfand: null }])!, /Preis/);
+  assert.match(validateButtons([{ id: "a", label: "X", priceCents: 1, pfand: null }, { id: "a", label: "Y", priceCents: 1, pfand: null }])!, /ID/);
 });
 
 test("change and counting helpers", () => {

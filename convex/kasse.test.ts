@@ -13,9 +13,9 @@ function setup() {
   t.registerComponent("betterAuth", authSchema, authModules);
   return t;
 }
-async function signIn(t: ReturnType<typeof setup>, username: string) {
+async function signIn(t: ReturnType<typeof setup>, username: string, role: "admin" | "user" = "user") {
   const now = Date.now();
-  const user = await t.mutation(components.betterAuth.adapter.create, { input: { model: "user", data: { name: username, username, email: `${username}@chaxter.invalid`, emailVerified: false, role: "user", banned: false, createdAt: now, updatedAt: now } } });
+  const user = await t.mutation(components.betterAuth.adapter.create, { input: { model: "user", data: { name: username, username, email: `${username}@chaxter.invalid`, emailVerified: false, role, banned: false, createdAt: now, updatedAt: now } } });
   const session = await t.mutation(components.betterAuth.adapter.create, { input: { model: "session", data: { userId: user._id, token: crypto.randomUUID(), expiresAt: now + 86_400_000, createdAt: now, updatedAt: now } } });
   return t.withIdentity({ subject: user._id, sessionId: session._id });
 }
@@ -87,5 +87,15 @@ describe("Kasse", () => {
     await expect(anna.mutation(api.kasse.sync, { ops: [make(crypto.randomUUID()).sale(100)] })).rejects.toThrow("Eröffnung fehlt");
     // A rejected batch writes nothing, so the device can fix and resend it.
     expect((await anna.query(api.kasse.overview, {})).open).toHaveLength(0);
+  });
+
+  test("Knöpfe: Standard für alle, ändern nur als Admin", async () => {
+    const t = setup(), anna = await signIn(t, "anna"), chef = await signIn(t, "chef", "admin");
+    expect((await anna.query(api.kasse.buttons, {})).length).toBeGreaterThan(0);
+    const mine = [{ id: "cola", label: " Cola ", priceCents: 200, pfand: "getraenk" as const }];
+    await expect(anna.mutation(api.kasse.saveButtons, { buttons: mine })).rejects.toThrow("Admin erforderlich");
+    await expect(chef.mutation(api.kasse.saveButtons, { buttons: [{ ...mine[0], priceCents: 0 }] })).rejects.toThrow("Preis");
+    await chef.mutation(api.kasse.saveButtons, { buttons: mine });
+    expect(await anna.query(api.kasse.buttons, {})).toEqual([{ id: "cola", label: "Cola", priceCents: 200, pfand: "getraenk" }]);
   });
 });

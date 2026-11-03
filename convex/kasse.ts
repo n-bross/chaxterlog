@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { requireActor } from "./auth";
-import { validateOp, type KasseOp, type OpAck, type ServerEntry, type ServerSession } from "../lib/kasse";
+import { DEFAULT_BUTTONS, validateButtons, validateOp, type KasseButton, type KasseOp, type OpAck, type ServerEntry, type ServerSession } from "../lib/kasse";
 
 const base = { id: v.string(), sessionId: v.string(), at: v.string(), seq: v.number(), deviceId: v.string(), deviceName: v.string() };
 const opValidator = v.union(
@@ -90,4 +90,22 @@ export const session = query({ args: { id: v.string() }, handler: async (ctx, { 
   const rows = await ctx.db.query("kasseEntries").withIndex("by_sessionId_and_seq", (q) => q.eq("sessionId", id)).take(ENTRY_LIMIT);
   const entries: ServerEntry[] = rows.map((e) => defined({ id: e.id, kind: e.kind, amountCents: e.amountCents, saleId: e.saleId, at: e.at, seq: e.seq, username: e.username, deviceName: e.deviceName, late: e.late, ignored: e.ignored }));
   return { session: toSession(doc), entries };
+} });
+
+const buttonValidator = v.object({ id: v.string(), label: v.string(), priceCents: v.number(), pfand: v.union(v.literal("getraenk"), v.literal("wasser"), v.null()) });
+export const buttons = query({ args: {}, handler: async (ctx): Promise<KasseButton[]> => {
+  await requireActor(ctx);
+  const doc = await ctx.db.query("kasseButtons").withIndex("by_key", (q) => q.eq("key", "default")).unique();
+  return doc?.buttons ?? DEFAULT_BUTTONS;
+} });
+export const saveButtons = mutation({ args: { buttons: v.array(buttonValidator) }, handler: async (ctx, { buttons }) => {
+  const actor = await requireActor(ctx, true);
+  const cleaned = buttons.map((b) => ({ ...b, label: b.label.trim() }));
+  const problem = validateButtons(cleaned);
+  if (problem) throw new ConvexError(problem);
+  const doc = await ctx.db.query("kasseButtons").withIndex("by_key", (q) => q.eq("key", "default")).unique();
+  const value = { key: "default" as const, buttons: cleaned, updatedAt: Date.now(), updatedBy: actor.username };
+  if (doc) await ctx.db.replace("kasseButtons", doc._id, value);
+  else await ctx.db.insert("kasseButtons", value);
+  return null;
 } });
