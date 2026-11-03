@@ -1710,3 +1710,76 @@ select { background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 
   .statistic-graphic:focus-within > .statistic-download,
   .statistic-graphic > .statistic-download[aria-busy="true"] { opacity: 1; pointer-events: auto; }
 }
+
+/* ─── Kasse (Prototyp) ─────────────────────────────────────── */
+.kasse-screen { max-width: 1080px; }
+.kasse-badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--amber-soft); color: var(--amber); font-size: 11px; font-weight: 600; vertical-align: 2px; }
+.kasse-sync { justify-self: end; white-space: nowrap; }
+.kasse-panel { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px; background: var(--panel); box-shadow: var(--shadow-lift); min-width: 0; }
+.kasse-panel h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.kasse-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.kasse-euro-input { display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 12px; background: var(--well); box-shadow: var(--shadow-input); }
+.kasse-euro-input input { flex: 1; min-width: 0; border: 0; background: none; padding: 12px 0; font-size: 22px; font-variant-numeric: tabular-nums; color: var(--ink); outline: none; }
+.kasse-join { display: flex; justify-content: space-between; gap: 12px; text-align: left; }
+
+.kasse-total { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 0 4px; text-align: center; }
+.kasse-total strong { font-size: clamp(34px, 8vw, 48px); font-weight: 650; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+
+.kasse-layout { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 820px) { .kasse-layout { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; } .kasse-log { position: sticky; top: 12px; max-height: calc(100dvh - 24px); overflow: auto; } }
+
+.kasse-display { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 12px 16px; border-radius: 12px; background: var(--well); box-shadow: var(--shadow-well); font-variant-numeric: tabular-nums; }
+.kasse-parts { font-size: 13px; color: var(--ink-3); overflow-wrap: anywhere; text-align: right; }
+.kasse-amount { font-size: 36px; font-weight: 650; letter-spacing: -0.02em; }
+.kasse-keypad { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.kasse-key { min-height: 58px; border: 0; border-radius: 12px; background: var(--cap); box-shadow: var(--shadow-cap); color: var(--ink); font-size: 22px; font-weight: 550; font-variant-numeric: tabular-nums; touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; transition: transform 0.08s ease-out, background 0.15s; }
+.kasse-key:active { transform: scale(0.96); background: var(--sub); }
+.kasse-key-op { color: var(--accent); }
+
+.kasse-pfand { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--well); }
+.kasse-pfand-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+.kasse-stepper { display: inline-flex; align-items: center; gap: 4px; }
+.kasse-stepper button { width: 40px; height: 40px; border: 0; border-radius: 10px; background: var(--cap); box-shadow: var(--shadow-cap); color: var(--ink); font-size: 20px; touch-action: manipulation; }
+.kasse-stepper output { min-width: 32px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kasse-stepper output[data-negative="true"] { color: var(--moss); }
+
+.kasse-summary { display: grid; gap: 6px; margin: 0; }
+.kasse-summary > div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.kasse-summary dt { color: var(--ink-2); }
+.kasse-summary dd { margin: 0; font-variant-numeric: tabular-nums; }
+.kasse-strong { font-weight: 650; font-size: 16px; }
+.kasse-diff[data-sign="0"] { color: var(--moss); font-weight: 600; }
+.kasse-diff[data-sign="-1"] { color: var(--flag); font-weight: 600; }
+.kasse-diff[data-sign="1"] { color: var(--amber); font-weight: 600; }
+
+.kasse-given { display: flex; flex-direction: column; gap: 8px; }
+.kasse-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.kasse-given-input { flex: 1 1 120px; min-width: 0; min-height: 36px; padding: 6px 10px; border: 0; border-radius: 9px; background: var(--well); box-shadow: var(--shadow-input); color: var(--ink); font-size: 16px; }
+.kasse-change { margin: 0; font-size: 15px; }
+.kasse-change strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.kasse-change[data-short] { color: var(--flag); }
+.kasse-book { min-height: 56px; font-size: 17px; }
+.kasse-flash { min-height: 20px; margin: -4px 0 0; text-align: center; color: var(--moss); font-weight: 600; font-size: 14px; }
+
+.kasse-log ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.kasse-log li { display: grid; grid-template-columns: 20px 44px minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--hairline); font-size: 14px; }
+.kasse-log li[data-cancelled="true"] .kasse-log-amount { text-decoration: line-through; color: var(--ink-3); }
+.kasse-log li[data-kind="storno"] { color: var(--flag); }
+.kasse-log-state { text-align: center; color: var(--amber); font-weight: 700; }
+.kasse-log-state[data-confirmed="true"] { color: var(--moss); }
+.kasse-log-time { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.kasse-log-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.kasse-log-amount { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.kasse-storno { border: 0; background: none; color: var(--ink-3); font-size: 12px; padding: 4px 6px; border-radius: 6px; }
+.kasse-storno:hover { color: var(--flag); background: var(--flag-soft); }
+.kasse-close-button { align-self: center; }
+
+.kasse-warning { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--ink); font-size: 13px; }
+.kasse-denoms { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+.kasse-denoms label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-2); }
+.kasse-denoms input { min-width: 0; padding: 8px 10px; border: 0; border-radius: 9px; background: var(--well); box-shadow: var(--shadow-input); color: var(--ink); font-size: 16px; font-variant-numeric: tabular-nums; }
+.kasse-history table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.kasse-history th { text-align: left; font-weight: 500; color: var(--ink-3); padding: 4px 6px 6px 0; }
+.kasse-history td { padding: 8px 6px 8px 0; border-top: 1px solid var(--hairline); vertical-align: top; }
+.kasse-history { overflow-x: auto; }
+.kasse-late { display: block; color: var(--amber); }

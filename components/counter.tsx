@@ -28,7 +28,7 @@ const BURST_MS = 800;
 
 type Burst = { id: number; group: AgeGroup; x: number; y: number; kind: "plus" | "minus" };
 
-type IconName = "undo" | "redo" | "stats" | "calendar" | "user";
+type IconName = "undo" | "redo" | "stats" | "calendar" | "user" | "cash";
 function Icon({ name, className = "" }: { name: IconName; className?: string }) {
   const paths: Record<IconName, React.ReactNode> = {
     undo: <path d="M9 5 4 10l5 5M4 10h10a6 6 0 0 1 0 12" />,
@@ -36,6 +36,7 @@ function Icon({ name, className = "" }: { name: IconName; className?: string }) 
     calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 11h18" /></>,
     user: <><circle cx="12" cy="8" r="4" /><path d="M4 21v-2a8 8 0 0 1 16 0v2" /></>,
     stats: <path d="M5 20V10m7 10V4m7 16v-7" />,
+    cash: <><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 9.5v5M18 9.5v5" /></>,
   };
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className}>{paths[name]}</svg>;
 }
@@ -335,6 +336,10 @@ export default function Counter({ user }: { user: { id: string; username: string
           <Link href="/statistik" className="header-tool header-stats-btn" aria-label="Statistik" title="Statistik öffnen">
             <Icon name="stats" />
             <span className="stats-label">Statistik</span>
+          </Link>
+          <Link href="/kasse" className="header-tool header-stats-btn" aria-label="Kasse" title="Kasse öffnen">
+            <Icon name="cash" />
+            <span className="stats-label">Kasse</span>
           </Link>
         </div>
 
