@@ -259,11 +259,12 @@ function Register({ sessionId, view, buttons, canEdit, tab }: { sessionId: strin
         {problem && <p role="alert" className="error-message">{problem}</p>}
         {canEdit && <button type="button" className="kasse-edit-link" onClick={() => setEditing(true)}>Knöpfe bearbeiten</button>}
 
-        {/* Always in reach: what the customer pays, what goes into the till, and the booking button. */}
+        {/* Always in reach: the total, what goes into the till, and the booking button. */}
         <div className="kasse-pay-bar" aria-live="polite">
           <div className="kasse-pay-totals">
-            <div className="kasse-pay-customer"><span>Kunde zahlt</span><strong>{formatCents(result.customerPays)}</strong>{result.deposit > 0 && <small>inkl. {formatCents(result.deposit)} Pfand</small>}</div>
-            <div className="kasse-pay-till"><span>In die Kasse</span><strong>{formatCents(result.till)}</strong></div>
+            <div className="kasse-pay-customer"><span>Gesamt</span><strong>{formatCents(result.customerPays)}</strong>{result.deposit > 0 && <small>inkl. {formatCents(result.deposit)} Pfand</small>}</div>
+            {/* Only differs from the total when deposit is involved. */}
+            {result.deposit > 0 && <div className="kasse-pay-till"><span>In die Kasse legen</span><strong>{formatCents(result.till)}</strong></div>}
           </div>
           {result.change !== null && result.customerPays > 0 && (result.change >= 0
             ? <p className="kasse-change">Rückgeld <strong>{formatCents(result.change)}</strong> <small>{changeBreakdown(result.change).map((c) => `${c.count}× ${denominationLabel(c.cents)}`).join(", ")}</small></p>
