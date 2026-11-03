@@ -92,7 +92,7 @@ export const session = query({ args: { id: v.string() }, handler: async (ctx, { 
   return { session: toSession(doc), entries };
 } });
 
-const buttonValidator = v.object({ id: v.string(), label: v.string(), priceCents: v.number(), pfand: v.union(v.literal("getraenk"), v.literal("wasser"), v.null()) });
+const buttonValidator = v.object({ id: v.string(), label: v.string(), priceCents: v.number(), pfand: v.boolean() });
 export const buttons = query({ args: {}, handler: async (ctx): Promise<KasseButton[]> => {
   await requireActor(ctx);
   const doc = await ctx.db.query("kasseButtons").withIndex("by_key", (q) => q.eq("key", "default")).unique();

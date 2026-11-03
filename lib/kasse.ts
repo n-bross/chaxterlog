@@ -1,23 +1,19 @@
 // Kasse: pure logic shared by the page, the sync hook, the Convex functions and the tests.
 // Money is always an integer number of cents.
 
-export const PFAND = [
-  { key: "getraenk", label: "Getränk", cents: 100 },
-  { key: "wasser", label: "Wasser", cents: 50 },
-] as const;
-export type PfandKey = (typeof PFAND)[number]["key"];
-export const pfandOf = (key: PfandKey | null | undefined) => PFAND.find((item) => item.key === key)?.cents ?? 0;
+const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+export function formatCents(cents: number) { return euro.format(cents / 100); }
+
+/** Deposit per drink. It is only added for the customer; it never goes into the till. */
+export const PFAND_CENTS = 50;
 
 /** A quick button: a fixed amount, optionally with deposit added for the customer. Not an article: only the amount is booked. */
-export type KasseButton = { id: string; label: string; priceCents: number; pfand: PfandKey | null };
-// Examples until the team enters its own prices on the page.
+export type KasseButton = { id: string; label: string; priceCents: number; pfand: boolean };
+const amount = (cents: number): KasseButton => ({ id: `b-${cents}`, label: formatCents(cents), priceCents: cents, pfand: false });
 export const DEFAULT_BUTTONS: KasseButton[] = [
-  { id: "b-050", label: "0,50 €", priceCents: 50, pfand: null },
-  { id: "b-100", label: "1,00 €", priceCents: 100, pfand: null },
-  { id: "b-150", label: "1,50 €", priceCents: 150, pfand: null },
-  { id: "b-200", label: "2,00 €", priceCents: 200, pfand: null },
-  { id: "d-getraenk", label: "Getränk", priceCents: 150, pfand: "getraenk" },
-  { id: "d-wasser", label: "Wasser", priceCents: 100, pfand: "wasser" },
+  { id: "d-getraenk", label: "Getränk", priceCents: 100, pfand: true },
+  { id: "d-wasser", label: "Wasser", priceCents: 50, pfand: true },
+  ...[5, 10, 20, 30, 40, 50, 80, 90, 100, 200].map(amount),
 ];
 export const MAX_BUTTONS = 40;
 export function validateButtons(buttons: KasseButton[]): string | null {
@@ -28,12 +24,11 @@ export function validateButtons(buttons: KasseButton[]): string | null {
     ids.add(b.id);
     if (!b.label.trim() || b.label.length > 30) return "Jeder Knopf braucht einen Namen (max. 30 Zeichen).";
     if (!Number.isSafeInteger(b.priceCents) || b.priceCents < 1 || b.priceCents > MAX_SALE_CENTS) return `Ungültiger Preis bei „${b.label}“.`;
-    if (b.pfand !== null && !PFAND.some((item) => item.key === b.pfand)) return "Ungültiges Pfand.";
   }
   return null;
 }
 
-// The current customer's receipt. Deposit lines have no till amount; bottle returns are negative deposit.
+// The current customer's receipt.
 export type CartLine = { key: string; label: string; tillCents: number; pfandCents: number; count: number };
 export type CartItem = Omit<CartLine, "count">;
 export function cartAdd(cart: CartLine[], item: CartItem): CartLine[] {
@@ -43,8 +38,7 @@ export function cartAdd(cart: CartLine[], item: CartItem): CartLine[] {
 export function cartRemove(cart: CartLine[], key: string): CartLine[] {
   return cart.flatMap((line) => line.key !== key ? [line] : line.count > 1 ? [{ ...line, count: line.count - 1 }] : []);
 }
-export const buttonItem = (b: KasseButton): CartItem => ({ key: `btn:${b.id}`, label: b.label, tillCents: b.priceCents, pfandCents: pfandOf(b.pfand) });
-export const returnItem = (key: PfandKey): CartItem => ({ key: `ret:${key}`, label: `${PFAND.find((p) => p.key === key)!.label}-Flasche zurück`, tillCents: 0, pfandCents: -pfandOf(key) });
+export const buttonItem = (b: KasseButton): CartItem => ({ key: `btn:${b.id}`, label: b.label, tillCents: b.priceCents, pfandCents: b.pfand ? PFAND_CENTS : 0 });
 export const customItem = (cents: number): CartItem => ({ key: `custom:${cents}`, label: "Betrag", tillCents: cents, pfandCents: 0 });
 
 /** What the customer pays, what goes into the till, and what goes into / out of the deposit box. */
@@ -59,8 +53,6 @@ export const MAX_SALE_CENTS = 100_000; // 1.000 € per booking catches a slippe
 export const MAX_CASH_CENTS = 10_000_000;
 export const DENOMINATIONS = [50_000, 20_000, 10_000, 5_000, 2_000, 1_000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
 
-const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
-export function formatCents(cents: number) { return euro.format(cents / 100); }
 export function formatSigned(cents: number) { return `${cents > 0 ? "+" : cents < 0 ? "−" : "±"}${euro.format(Math.abs(cents) / 100)}`; }
 export function denominationLabel(cents: number) { return cents >= 100 ? `${cents / 100} €` : `${cents} ct`; }
 

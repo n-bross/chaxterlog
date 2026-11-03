@@ -18,6 +18,6 @@ export default defineSchema({
   kasseEntries: defineTable({ id: v.string(), sessionId: v.string(), kind: v.union(v.literal("sale"), v.literal("storno")), amountCents: v.number(), saleId: v.optional(v.string()), at: v.string(), seq: v.number(), receivedAt: v.number(), userId: v.string(), username: v.string(), deviceId: v.string(), deviceName: v.string(), late: v.boolean(), ignored: v.boolean() })
     .index("by_uuid", ["id"]).index("by_sessionId_and_seq", ["sessionId", "seq"]).index("by_saleId", ["saleId"]),
   // Shared quick buttons of the till; one document, edited by admins.
-  kasseButtons: defineTable({ key: v.literal("default"), buttons: v.array(v.object({ id: v.string(), label: v.string(), priceCents: v.number(), pfand: v.union(v.literal("getraenk"), v.literal("wasser"), v.null()) })), updatedAt: v.number(), updatedBy: v.string() }).index("by_key", ["key"]),
+  kasseButtons: defineTable({ key: v.literal("default"), buttons: v.array(v.object({ id: v.string(), label: v.string(), priceCents: v.number(), pfand: v.boolean() })), updatedAt: v.number(), updatedBy: v.string() }).index("by_key", ["key"]),
   setup: defineTable({ key: v.literal("admin"), tokenHash: v.string(), expiresAt: v.number(), completed: v.boolean() }).index("key", ["key"]),
 });

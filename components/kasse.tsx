@@ -7,8 +7,8 @@ import { createId, getDevice } from "@/lib/device";
 import { errorMessage } from "@/lib/errors";
 import {
   buttonItem, cartAdd, cartRemove, cartTotals, changeBreakdown, countedTotal, CURRENT_KEY, customItem, DEFAULT_BUTTONS, DENOMINATIONS, denominationLabel, EMPTY_KEYPAD,
-  formatCents, formatSigned, KASSE_CHANGE, keypadPress, keypadTotal, nextSeq, parseEuro, PFAND, pfandOf, pruneOps, readOps, returnItem, saveOp, sessionView, validateButtons,
-  type CartLine, type KasseButton, type KasseOp, type Keypad, type PfandKey, type ServerEntry, type ServerSession, type StoredOp,
+  formatCents, formatSigned, KASSE_CHANGE, keypadPress, keypadTotal, nextSeq, parseEuro, PFAND_CENTS, pruneOps, readOps, saveOp, sessionView, validateButtons,
+  type CartLine, type KasseButton, type KasseOp, type Keypad, type ServerEntry, type ServerSession, type StoredOp,
 } from "@/lib/kasse";
 import { useKasseSync, type KasseSyncState } from "@/lib/use-kasse-sync";
 import { Modal } from "./interior/modal";
@@ -137,7 +137,6 @@ function Register({ sessionId, view, buttons, canEdit }: { sessionId: string; vi
 
   const book = () => {
     if (!cart.length) return;
-    if (!result.till) { reset(); setFlash("Nur Pfand – nichts gebucht"); setTimeout(() => setFlash(null), 2200); return; }
     try {
       record(sessionId, { type: "sale", amountCents: result.till });
       setFlash(`${formatCents(result.till)} gebucht`); setProblem(null); reset();
@@ -170,27 +169,16 @@ function Register({ sessionId, view, buttons, canEdit }: { sessionId: string; vi
 
     <div className="kasse-layout">
       <section className="kasse-panel kasse-register" aria-label="Buchen">
-        {drinks.length > 0 && <div className="kasse-group">
-          <span className="meta">Getränke · Pfand wird automatisch dazugerechnet</span>
-          <div className="kasse-buttons">{drinks.map((b) => <button key={b.id} type="button" className="kasse-btn" data-pfand={b.pfand} onClick={() => tap(b)}>
-            <strong>{b.label}</strong><span>{formatCents(b.priceCents)} <small>+ {formatCents(pfandOf(b.pfand))} Pfand</small></span>
-          </button>)}</div>
-        </div>}
-        <div className="kasse-group">
-          <span className="meta">Beträge</span>
-          <div className="kasse-buttons kasse-buttons-amounts">{amounts.map((b) => <button key={b.id} type="button" className="kasse-btn" onClick={() => tap(b)}>
-            <strong>{b.label}</strong>{b.label.replace(/\s/g, "") !== formatCents(b.priceCents).replace(/\s/g, "") && <span>{formatCents(b.priceCents)}</span>}
+        {drinks.length > 0 && <div className="kasse-buttons kasse-buttons-drinks">{drinks.map((b) => <button key={b.id} type="button" className="kasse-btn kasse-btn-drink" onClick={() => tap(b)}>
+          <span className="kasse-btn-name">{b.label}</span>
+          <strong>{formatCents(b.priceCents + PFAND_CENTS)}</strong>
+          <small>{formatCents(b.priceCents)} + {formatCents(PFAND_CENTS)} Pfand</small>
+        </button>)}</div>}
+        <div className="kasse-buttons kasse-buttons-amounts">
+          {amounts.map((b) => <button key={b.id} type="button" className="kasse-btn" onClick={() => tap(b)}>
+            <strong>{b.label}</strong>{b.label.replace(/\s/g, "") !== formatCents(b.priceCents).replace(/\s/g, "") && <small>{formatCents(b.priceCents)}</small>}
           </button>)}
-            <button type="button" className="kasse-btn kasse-btn-other" aria-expanded={showKeypad} onClick={() => setShowKeypad((v) => !v)}><strong>Anderer</strong><span>{showKeypad ? "schließen" : "Betrag"}</span></button>
-          </div>
-        </div>
-        <div className="kasse-group">
-          <span className="meta">Flasche zurück</span>
-          <div className="kasse-buttons">
-            {PFAND.map((p) => <button key={p.key} type="button" className="kasse-btn kasse-btn-return" onClick={() => setCart((c) => cartAdd(c, returnItem(p.key as PfandKey)))}>
-              <strong>{p.label}</strong><span>− {formatCents(p.cents)}</span>
-            </button>)}
-          </div>
+          <button type="button" className="kasse-btn kasse-btn-other" aria-expanded={showKeypad} onClick={() => setShowKeypad((v) => !v)}><strong>{showKeypad ? "×" : "…"}</strong><small>{showKeypad ? "schließen" : "anderer"}</small></button>
         </div>
         {showKeypad && <div className="kasse-custom">
           <output className="kasse-display" aria-label={`Betrag ${formatCents(custom)}`}><span className="kasse-amount">{formatCents(custom)}</span></output>
@@ -207,15 +195,15 @@ function Register({ sessionId, view, buttons, canEdit }: { sessionId: string; vi
 
         <div className="kasse-bon" aria-label="Bon">
           {cart.length === 0
-            ? <p className="kasse-hint">Tippe auf die Knöpfe – mehrmals tippen zählt mehrfach.</p>
+            ? <p className="kasse-hint">Noch leer – Knöpfe antippen, mehrmals tippen zählt mehrfach.</p>
             : <ul>{cart.map((line) => <li key={line.key}>
                 <span>{line.count > 1 && <b>{line.count}× </b>}{line.label}</span>
                 <span className="kasse-bon-amount">{formatCents((line.tillCents + line.pfandCents) * line.count)}</span>
                 <button type="button" aria-label={`${line.label} einmal entfernen`} onClick={() => setCart((c) => cartRemove(c, line.key))}>−</button>
               </li>)}</ul>}
           <dl className="kasse-summary">
-            <div><dt>Kunde zahlt</dt><dd className="kasse-strong">{result.customerPays < 0 ? `bekommt ${formatCents(-result.customerPays)}` : formatCents(result.customerPays)}</dd></div>
-            {result.deposit !== 0 && <div><dt>{result.deposit < 0 ? "Pfand zurück" : "davon Pfand"}</dt><dd>{formatCents(Math.abs(result.deposit))}</dd></div>}
+            <div><dt>Kunde zahlt</dt><dd className="kasse-strong">{formatCents(result.customerPays)}</dd></div>
+            {result.deposit > 0 && <div><dt>davon Pfand</dt><dd>{formatCents(result.deposit)}</dd></div>}
             <div><dt>In die Kasse</dt><dd className="kasse-strong">{formatCents(result.till)}</dd></div>
           </dl>
         </div>
@@ -235,7 +223,7 @@ function Register({ sessionId, view, buttons, canEdit }: { sessionId: string; vi
         <div className="kasse-book-bar">
           <button type="button" className="secondary-button kasse-clear" onClick={reset} disabled={!cart.length}>Leeren</button>
           <button type="button" className="primary-button kasse-book" onClick={book} disabled={!cart.length}>
-            {!cart.length ? "Knopf antippen" : result.till ? `${formatCents(result.till)} buchen` : "Nur Pfand – fertig"}
+            {!cart.length ? "Knopf antippen" : `${formatCents(result.till)} buchen`}
           </button>
         </div>
         <p className="kasse-flash" role="status" aria-live="assertive">{flash && <>✓ {flash}</>}</p>
@@ -301,20 +289,17 @@ function ButtonEditor({ buttons, onClose }: { buttons: KasseButton[]; onClose: (
   };
   return <Modal open onClose={() => !busy && onClose()} title="Knöpfe bearbeiten" maxWidth={560} className="interior-modal">
     <div className="modal-form kasse-editor">
-      <p className="kasse-hint">Getränke-Knöpfe rechnen das Pfand für den Kunden dazu; in die Kasse geht nur der Preis. Gilt für alle Geräte.</p>
+      <p className="kasse-hint">Mit „+ Pfand“ werden 0,50 € für den Kunden dazugerechnet; in die Kasse geht nur der Preis. Gilt für alle Geräte.</p>
       {rows.map((row, i) => <div key={row.id} className="kasse-editor-row">
         <input aria-label="Name" value={row.label} maxLength={30} onChange={(e) => update(i, { label: e.target.value })} placeholder="Name" />
         <input aria-label="Preis" inputMode="decimal" value={row.price} onChange={(e) => update(i, { price: e.target.value })} placeholder="0,00" />
-        <select aria-label="Pfand" value={row.pfand ?? ""} onChange={(e) => update(i, { pfand: (e.target.value || null) as PfandKey | null })}>
-          <option value="">kein Pfand</option>
-          {PFAND.map((p) => <option key={p.key} value={p.key}>+ {p.label} {formatCents(p.cents)}</option>)}
-        </select>
+        <label className="kasse-editor-pfand"><input type="checkbox" checked={row.pfand} onChange={(e) => update(i, { pfand: e.target.checked })} /> + Pfand</label>
         <span className="kasse-editor-actions">
           <button type="button" aria-label="Nach oben" onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
           <button type="button" aria-label="Entfernen" onClick={() => setRows((r) => r.filter((_, j) => j !== i))}>✕</button>
         </span>
       </div>)}
-      <button type="button" className="secondary-button btn-small" onClick={() => setRows((r) => [...r, { id: createId().slice(0, 13), label: "", priceCents: 0, pfand: null, price: "" }])}>+ Knopf hinzufügen</button>
+      <button type="button" className="secondary-button btn-small" onClick={() => setRows((r) => [...r, { id: createId().slice(0, 13), label: "", priceCents: 0, pfand: false, price: "" }])}>+ Knopf hinzufügen</button>
       {problem && <p role="alert" className="error-message">{problem}</p>}
       <div className="modal-buttons">
         <button type="button" className="secondary-button btn-small" onClick={onClose} disabled={busy}>Abbrechen</button>

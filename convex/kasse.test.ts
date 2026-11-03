@@ -92,10 +92,10 @@ describe("Kasse", () => {
   test("Knöpfe: Standard für alle, ändern nur als Admin", async () => {
     const t = setup(), anna = await signIn(t, "anna"), chef = await signIn(t, "chef", "admin");
     expect((await anna.query(api.kasse.buttons, {})).length).toBeGreaterThan(0);
-    const mine = [{ id: "cola", label: " Cola ", priceCents: 200, pfand: "getraenk" as const }];
+    const mine = [{ id: "cola", label: " Cola ", priceCents: 200, pfand: true }];
     await expect(anna.mutation(api.kasse.saveButtons, { buttons: mine })).rejects.toThrow("Admin erforderlich");
     await expect(chef.mutation(api.kasse.saveButtons, { buttons: [{ ...mine[0], priceCents: 0 }] })).rejects.toThrow("Preis");
     await chef.mutation(api.kasse.saveButtons, { buttons: mine });
-    expect(await anna.query(api.kasse.buttons, {})).toEqual([{ id: "cola", label: "Cola", priceCents: 200, pfand: "getraenk" }]);
+    expect(await anna.query(api.kasse.buttons, {})).toEqual([{ id: "cola", label: "Cola", priceCents: 200, pfand: true }]);
   });
 });
