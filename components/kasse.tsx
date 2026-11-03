@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { createId, getDevice } from "@/lib/device";
 import { errorMessage } from "@/lib/errors";
@@ -12,6 +12,7 @@ import {
 } from "@/lib/kasse";
 import { useKasseSync, type KasseSyncState } from "@/lib/use-kasse-sync";
 import { Modal } from "./interior/modal";
+import { SegmentedControl } from "./interior/segmented-control";
 
 type SessionData = { session: ServerSession | null; entries: ServerEntry[] };
 type Overview = { open: ServerSession[]; closed: ServerSession[] };
@@ -46,9 +47,11 @@ export default function Kasse({ user }: { user: { username: string; role: string
   useEffect(() => { refresh(); void navigator.storage?.persist?.().catch(() => {}); }, [refresh]);
   const sync = useKasseSync(refresh);
 
-  const liveOverview = useQuery(api.kasse.overview, {});
-  const liveSession = useQuery(api.kasse.session, sessionId ? { id: sessionId } : "skip");
-  const liveButtons = useQuery(api.kasse.buttons, {});
+  // Queries wait for the auth token; until then the page runs on this device's data and the cache.
+  const { isAuthenticated } = useConvexAuth();
+  const liveOverview = useQuery(api.kasse.overview, isAuthenticated ? {} : "skip");
+  const liveSession = useQuery(api.kasse.session, isAuthenticated && sessionId ? { id: sessionId } : "skip");
+  const liveButtons = useQuery(api.kasse.buttons, isAuthenticated ? {} : "skip");
   useEffect(() => { if (liveOverview) writeJson(OVERVIEW_CACHE, liveOverview); }, [liveOverview]);
   useEffect(() => { if (liveButtons) writeJson(BUTTONS_CACHE, liveButtons); }, [liveButtons]);
   const buttons = liveButtons ?? (ready ? readJson<KasseButton[]>(BUTTONS_CACHE) : null) ?? DEFAULT_BUTTONS;
@@ -58,6 +61,7 @@ export default function Kasse({ user }: { user: { username: string; role: string
   const server = liveSession ?? (ready && sessionId ? readJson<SessionData>(sessionCache(sessionId)) : null);
   useEffect(() => { if (liveOverview) try { pruneOps(localStorage, new Set(liveOverview.closed.map((s) => s.id))); } catch { /* Cleanup is optional. */ } }, [liveOverview]);
 
+  const [tab, setTab] = useState<"kassieren" | "uebersicht">("kassieren");
   const choose = (id: string | null) => { if (id) localStorage.setItem(CURRENT_KEY, id); else localStorage.removeItem(CURRENT_KEY); refresh(); };
   const view = useMemo(() => sessionId ? sessionView(sessionId, local, server) : null, [sessionId, local, server]);
 
@@ -74,8 +78,12 @@ export default function Kasse({ user }: { user: { username: string; role: string
         ? <Start user={user} overview={overview} onOpen={(floatCents) => { const id = createId(); record(id, { type: "open", floatCents }); choose(id); }} onJoin={choose} />
         : view.closed
           ? <Closed view={view} server={server?.session ?? null} onNew={() => choose(null)} />
-          : <Register sessionId={sessionId} view={view} buttons={buttons} canEdit={user.role === "admin"} />}
-      {overview && overview.closed.length > 0 && <History sessions={overview.closed} />}
+          : <>
+            <SegmentedControl className="kasse-tabs" label="Ansicht" value={tab} onValueChange={(value) => setTab(value as typeof tab)}
+              options={[{ value: "kassieren", label: "Kassieren" }, { value: "uebersicht", label: `Übersicht · ${formatCents(view.expectedCents)}` }]} />
+            <Register sessionId={sessionId} view={view} buttons={buttons} canEdit={user.role === "admin"} tab={tab} />
+          </>}
+      {overview && overview.closed.length > 0 && (view?.closed || (view && tab === "uebersicht")) && <History sessions={overview.closed} />}
     </main>
   );
 }
@@ -119,7 +127,7 @@ function Start({ user, overview, onOpen, onJoin }: { user: { username: string };
 
 type View = ReturnType<typeof sessionView>;
 
-function Register({ sessionId, view, buttons, canEdit }: { sessionId: string; view: View; buttons: KasseButton[]; canEdit: boolean }) {
+function Register({ sessionId, view, buttons, canEdit, tab }: { sessionId: string; view: View; buttons: KasseButton[]; canEdit: boolean; tab: "kassieren" | "uebersicht" }) {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [keypad, setKeypad] = useState<Keypad>(EMPTY_KEYPAD);
   const [showKeypad, setShowKeypad] = useState(false);
@@ -160,15 +168,57 @@ function Register({ sessionId, view, buttons, canEdit }: { sessionId: string; vi
   const amounts = buttons.filter((b) => !b.pfand), drinks = buttons.filter((b) => b.pfand);
   const tap = (b: KasseButton) => setCart((c) => cartAdd(c, buttonItem(b)));
   const recent = [...view.entries].reverse().slice(0, 40);
-  return <>
-    <section className="kasse-total" aria-live="polite">
-      <span className="meta">Soll in der Kasse</span>
-      <strong>{formatCents(view.expectedCents)}</strong>
-      <span className="kasse-hint">Wechselgeld {formatCents(view.floatCents)} · Umsatz {formatCents(view.netCents)} · {view.saleCount} {view.saleCount === 1 ? "Buchung" : "Buchungen"}</span>
-    </section>
+  const dialogs = <>
 
-    <div className="kasse-layout">
-      <section className="kasse-panel kasse-register" aria-label="Buchen">
+    <Modal open={!!storno} onClose={() => setStorno(null)} title="Buchung stornieren?" maxWidth={420} className="interior-modal">
+      {storno && <div className="modal-form">
+        <p>{formatCents(storno.amountCents)} von {time(storno.at)} Uhr wird aus der Kasse herausgerechnet. Die Buchung bleibt im Protokoll sichtbar.</p>
+        <div className="modal-buttons">
+          <button type="button" className="secondary-button btn-small" onClick={() => setStorno(null)}>Abbrechen</button>
+          <button type="button" className="danger-button btn-small" onClick={() => {
+            try { record(sessionId, { type: "storno", saleId: storno.id }); setStorno(null); }
+            catch (e) { setProblem(errorMessage(e, "Storno NICHT gespeichert.")); setStorno(null); }
+          }}>Stornieren</button>
+        </div>
+      </div>}
+    </Modal>
+    {editing && <ButtonEditor buttons={buttons} onClose={() => setEditing(false)} />}
+    <CloseDialog open={closing} view={view} onClose={() => setClosing(false)} onConfirm={(countedCents) => { record(sessionId, { type: "close", countedCents }); setClosing(false); }} />
+  </>;
+  if (tab === "uebersicht") return <>
+    <section className="kasse-panel kasse-status">
+      <div className="kasse-status-main"><span className="kasse-hint">Soll in der Kasse</span><strong>{formatCents(view.expectedCents)}</strong></div>
+      <dl className="kasse-summary">
+        <div><dt>Wechselgeld</dt><dd>{formatCents(view.floatCents)}</dd></div>
+        <div><dt>Umsatz</dt><dd>{formatCents(view.netCents)}</dd></div>
+        <div><dt>Buchungen</dt><dd>{view.saleCount}</dd></div>
+        {view.openedAt && <div><dt>Geöffnet</dt><dd>{dateTime(view.openedAt)}</dd></div>}
+      </dl>
+      <button type="button" className="primary-button" onClick={() => setClosing(true)}>Kasse abschließen</button>
+    </section>
+    <section className="kasse-panel kasse-log" aria-label="Buchungen">
+      <h2>Buchungen</h2>
+      {recent.length === 0 && <p className="kasse-hint">Noch keine Buchung.</p>}
+      <ol>
+        {recent.map((entry) => {
+          const cancelled = entry.kind === "sale" && view.cancelled.has(entry.id);
+          return <li key={entry.id} data-kind={entry.kind} data-cancelled={cancelled}>
+            <span className="kasse-log-state" title={entry.confirmed ? "Auf dem Server gespeichert" : "Nur auf diesem Gerät – wird übertragen"} data-confirmed={entry.confirmed}>{entry.confirmed ? "✓" : "…"}</span>
+            <span className="kasse-log-time">{time(entry.at)}</span>
+            <span className="kasse-log-what">{entry.kind === "storno" ? "Storno" : entry.who}{entry.late && " · nachträglich"}</span>
+            <span className="kasse-log-amount">{entry.kind === "storno" ? formatSigned(entry.amountCents) : formatCents(entry.amountCents)}</span>
+            {entry.kind === "sale" && !cancelled && <button type="button" className="kasse-storno" onClick={() => setStorno(entry)}>Storno</button>}
+          </li>;
+        })}
+      </ol>
+      {view.checksumOk === false && <p role="alert" className="error-message">Prüfsumme stimmt nicht: Server-Summe und Einzelbuchungen weichen ab.</p>}
+    </section>
+    {problem && <p role="alert" className="error-message">{problem}</p>}
+    {dialogs}
+  </>;
+
+  return <>
+      <section className="kasse-register" aria-label="Kassieren">
         {drinks.length > 0 && <div className="kasse-buttons kasse-buttons-drinks">{drinks.map((b) => <button key={b.id} type="button" className="kasse-btn kasse-btn-drink" onClick={() => tap(b)}>
           <span className="kasse-btn-name">{b.label}</span>
           <strong>{formatCents(b.priceCents + PFAND_CENTS)}</strong>
@@ -193,78 +243,38 @@ function Register({ sessionId, view, buttons, canEdit }: { sessionId: string; vi
           </div>
         </div>}
 
-        <div className="kasse-bon" aria-label="Bon">
-          {cart.length === 0
-            ? <p className="kasse-hint">Noch leer – Knöpfe antippen, mehrmals tippen zählt mehrfach.</p>
-            : <ul>{cart.map((line) => <li key={line.key}>
-                <span>{line.count > 1 && <b>{line.count}× </b>}{line.label}</span>
-                <span className="kasse-bon-amount">{formatCents((line.tillCents + line.pfandCents) * line.count)}</span>
-                <button type="button" aria-label={`${line.label} einmal entfernen`} onClick={() => setCart((c) => cartRemove(c, line.key))}>−</button>
-              </li>)}</ul>}
-          <dl className="kasse-summary">
-            <div><dt>Kunde zahlt</dt><dd className="kasse-strong">{formatCents(result.customerPays)}</dd></div>
-            {result.deposit > 0 && <div><dt>davon Pfand</dt><dd>{formatCents(result.deposit)}</dd></div>}
-            <div><dt>In die Kasse</dt><dd className="kasse-strong">{formatCents(result.till)}</dd></div>
-          </dl>
-        </div>
+        {cart.length > 0 && <ul className="kasse-bon" aria-label="Bon">{cart.map((line) => <li key={line.key}>
+          <span>{line.count > 1 && <b>{line.count}× </b>}{line.label}</span>
+          <span className="kasse-bon-amount">{formatCents((line.tillCents + line.pfandCents) * line.count)}</span>
+          <button type="button" aria-label={`${line.label} einmal entfernen`} onClick={() => setCart((c) => cartRemove(c, line.key))}>−</button>
+        </li>)}</ul>}
 
         {result.customerPays > 0 && <div className="kasse-given" role="group" aria-label="Gegeben (Rückgeld berechnen)">
-          <span className="meta">Gegeben</span>
+          <span className="kasse-hint">Gegeben</span>
           <div className="kasse-chips">
             {[500, 1000, 2000, 5000].map((cents) => <button key={cents} type="button" className="secondary-button btn-small" aria-pressed={given === cents} onClick={() => { setGiven(given === cents ? null : cents); setGivenText(""); }}>{cents / 100} €</button>)}
-            <input className="kasse-given-input" inputMode="decimal" placeholder="anderer Betrag" value={givenText} onChange={(e) => { setGivenText(e.target.value); setGiven(parseEuro(e.target.value)); }} aria-label="Gegebener Betrag" />
+            <input className="kasse-given-input" inputMode="decimal" placeholder="anderer" value={givenText} onChange={(e) => { setGivenText(e.target.value); setGiven(parseEuro(e.target.value)); }} aria-label="Gegebener Betrag" />
           </div>
-          {result.change !== null && (result.change >= 0
-            ? <p className="kasse-change">Rückgeld <strong>{formatCents(result.change)}</strong> <small className="kasse-hint">{changeBreakdown(result.change).map((c) => `${c.count}× ${denominationLabel(c.cents)}`).join(", ")}</small></p>
-            : <p className="kasse-change" data-short>Es fehlen noch <strong>{formatCents(-result.change)}</strong></p>)}
         </div>}
-
         {problem && <p role="alert" className="error-message">{problem}</p>}
-        <div className="kasse-book-bar">
-          <button type="button" className="secondary-button kasse-clear" onClick={reset} disabled={!cart.length}>Leeren</button>
-          <button type="button" className="primary-button kasse-book" onClick={book} disabled={!cart.length}>
-            {!cart.length ? "Knopf antippen" : `${formatCents(result.till)} buchen`}
-          </button>
-        </div>
-        <p className="kasse-flash" role="status" aria-live="assertive">{flash && <>✓ {flash}</>}</p>
         {canEdit && <button type="button" className="kasse-edit-link" onClick={() => setEditing(true)}>Knöpfe bearbeiten</button>}
-      </section>
 
-      <section className="kasse-panel kasse-log" aria-label="Buchungen">
-        <h2>Buchungen</h2>
-        {recent.length === 0 && <p className="kasse-hint">Noch keine Buchung.</p>}
-        <ol>
-          {recent.map((entry) => {
-            const cancelled = entry.kind === "sale" && view.cancelled.has(entry.id);
-            return <li key={entry.id} data-kind={entry.kind} data-cancelled={cancelled}>
-              <span className="kasse-log-state" title={entry.confirmed ? "Auf dem Server gespeichert" : "Nur auf diesem Gerät – wird übertragen"} data-confirmed={entry.confirmed}>{entry.confirmed ? "✓" : "…"}</span>
-              <span className="kasse-log-time">{time(entry.at)}</span>
-              <span className="kasse-log-what">{entry.kind === "storno" ? "Storno" : entry.who}{entry.late && " · nachträglich"}</span>
-              <span className="kasse-log-amount">{entry.kind === "storno" ? formatSigned(entry.amountCents) : formatCents(entry.amountCents)}</span>
-              {entry.kind === "sale" && !cancelled && <button type="button" className="kasse-storno" onClick={() => setStorno(entry)}>Storno</button>}
-            </li>;
-          })}
-        </ol>
-        {view.checksumOk === false && <p role="alert" className="error-message">Prüfsumme stimmt nicht: Server-Summe und Einzelbuchungen weichen ab.</p>}
-      </section>
-    </div>
-
-    <button type="button" className="secondary-button kasse-close-button" onClick={() => setClosing(true)}>Kasse abschließen</button>
-
-    <Modal open={!!storno} onClose={() => setStorno(null)} title="Buchung stornieren?" maxWidth={420} className="interior-modal">
-      {storno && <div className="modal-form">
-        <p>{formatCents(storno.amountCents)} von {time(storno.at)} Uhr wird aus der Kasse herausgerechnet. Die Buchung bleibt im Protokoll sichtbar.</p>
-        <div className="modal-buttons">
-          <button type="button" className="secondary-button btn-small" onClick={() => setStorno(null)}>Abbrechen</button>
-          <button type="button" className="danger-button btn-small" onClick={() => {
-            try { record(sessionId, { type: "storno", saleId: storno.id }); setStorno(null); }
-            catch (e) { setProblem(errorMessage(e, "Storno NICHT gespeichert.")); setStorno(null); }
-          }}>Stornieren</button>
+        {/* Always in reach: what the customer pays, what goes into the till, and the booking button. */}
+        <div className="kasse-pay-bar" aria-live="polite">
+          <div className="kasse-pay-totals">
+            <div className="kasse-pay-customer"><span>Kunde zahlt</span><strong>{formatCents(result.customerPays)}</strong>{result.deposit > 0 && <small>inkl. {formatCents(result.deposit)} Pfand</small>}</div>
+            <div className="kasse-pay-till"><span>In die Kasse</span><strong>{formatCents(result.till)}</strong></div>
+          </div>
+          {result.change !== null && result.customerPays > 0 && (result.change >= 0
+            ? <p className="kasse-change">Rückgeld <strong>{formatCents(result.change)}</strong> <small>{changeBreakdown(result.change).map((c) => `${c.count}× ${denominationLabel(c.cents)}`).join(", ")}</small></p>
+            : <p className="kasse-change" data-short>Es fehlen noch <strong>{formatCents(-result.change)}</strong></p>)}
+          <div className="kasse-pay-actions">
+            <button type="button" className="secondary-button kasse-clear" onClick={reset} disabled={!cart.length}>Leeren</button>
+            <button type="button" className="primary-button kasse-book" onClick={book} disabled={!cart.length}>{flash ? `✓ ${flash}` : !cart.length ? "Knopf antippen" : "Buchen"}</button>
+          </div>
         </div>
-      </div>}
-    </Modal>
-    {editing && <ButtonEditor buttons={buttons} onClose={() => setEditing(false)} />}
-    <CloseDialog open={closing} view={view} onClose={() => setClosing(false)} onConfirm={(countedCents) => { record(sessionId, { type: "close", countedCents }); setClosing(false); }} />
+      </section>
+      {dialogs}
   </>;
 }
 
