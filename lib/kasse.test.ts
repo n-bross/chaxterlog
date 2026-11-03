@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buttonItem, cartAdd, cartRemove, cartTotals, changeBreakdown, countedTotal, customItem, validateButtons, DEFAULT_BUTTONS, EMPTY_KEYPAD, keypadPress, keypadTotal, nextSeq, parseEuro, pendingOps, pushOps, readOps, saveOp, sessionView, StorageFailure, type KasseOp, type OpAck } from "./kasse.ts";
+import { removal, buttonItem, cartAdd, cartRemove, cartTotals, changeBreakdown, countedTotal, customItem, validateButtons, DEFAULT_BUTTONS, EMPTY_KEYPAD, keypadPress, keypadTotal, nextSeq, parseEuro, pendingOps, pushOps, readOps, saveOp, sessionView, StorageFailure, type KasseOp, type OpAck } from "./kasse.ts";
 
 function storageMock(failWrites = false): Storage {
   const data = new Map<string, string>();
@@ -92,4 +92,10 @@ test("the session view merges server and device without double counting", () => 
   assert.equal(view.entries.filter((e) => e.confirmed).length, 1);
   assert.equal(view.checksumOk, true);
   assert.equal(sessionView(session, readOps(s), { ...server, session: { ...server.session, salesCents: 500 } }).checksumOk, false, "a drifting server total is detected");
+});
+
+test("closing: everything above the float is taken out and counted", () => {
+  assert.deepEqual(removal(12_340, 5000, 7340), { shouldRemove: 7340, difference: 0 });
+  assert.deepEqual(removal(12_340, 5000, 7300), { shouldRemove: 7340, difference: -40 });
+  assert.deepEqual(removal(12_340, 5000, null), { shouldRemove: 7340, difference: null });
 });

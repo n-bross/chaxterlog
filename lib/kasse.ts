@@ -49,6 +49,8 @@ export function cartTotals(cart: CartLine[], givenCents?: number | null) {
   return { till, deposit, customerPays, change: givenCents == null ? null : givenCents - customerPays };
 }
 
+/** The till starts each evening with this float; everything above it is taken out at closing. */
+export const DEFAULT_FLOAT_CENTS = 5000;
 export const MAX_SALE_CENTS = 100_000; // 1.000 € per booking catches a slipped finger
 export const MAX_CASH_CENTS = 10_000_000;
 export const DENOMINATIONS = [50_000, 20_000, 10_000, 5_000, 2_000, 1_000, 500, 200, 100, 50, 20, 10, 5, 2, 1] as const;
@@ -89,6 +91,11 @@ export function changeBreakdown(cents: number) {
   }
   return result;
 }
+/** Closing: what should be taken out (everything above the float that stays) and how far the counted removal is off. */
+export function removal(expectedCents: number, keptCents: number, removedCents: number | null) {
+  const shouldRemove = expectedCents - keptCents;
+  return { shouldRemove, difference: removedCents === null ? null : removedCents - shouldRemove };
+}
 export function countedTotal(counts: Partial<Record<number, number>>) {
   return DENOMINATIONS.reduce((sum, value) => sum + value * Math.max(0, Math.floor(counts[value] ?? 0)), 0);
 }
@@ -102,7 +109,8 @@ export type KasseOp =
   | (Base & { type: "open"; floatCents: number })
   | (Base & { type: "sale"; amountCents: number })
   | (Base & { type: "storno"; saleId: string })
-  | (Base & { type: "close"; countedCents: number });
+  // countedCents: everything that was in the till; keptCents: what stays in as tomorrow's float.
+  | (Base & { type: "close"; countedCents: number; keptCents?: number });
 export type OpStatus = "ok" | "duplicate" | "ignored" | "late";
 export type OpAck = { id: string; status: OpStatus };
 
@@ -119,7 +127,7 @@ export function validateOp(op: KasseOp): string | null {
     case "open": return isCents(op.floatCents, MAX_CASH_CENTS) ? null : "Ungültiges Wechselgeld.";
     case "sale": return isCents(op.amountCents, MAX_SALE_CENTS, 1) ? null : "Ungültiger Betrag.";
     case "storno": return isUuid(op.saleId) ? null : "Ungültige Stornierung.";
-    case "close": return isCents(op.countedCents, MAX_CASH_CENTS) ? null : "Ungültiger Kassenbestand.";
+    case "close": return isCents(op.countedCents, MAX_CASH_CENTS) && (op.keptCents === undefined || isCents(op.keptCents, op.countedCents)) ? null : "Ungültiger Kassenbestand.";
   }
 }
 
@@ -198,7 +206,7 @@ export function pruneOps(storage: Storage, closedSessionIds: Set<string>, now = 
 // An entry gets its check mark only once it appears in the server's live data.
 
 export type ServerEntry = { id: string; kind: "sale" | "storno"; amountCents: number; saleId?: string; at: string; seq: number; username: string; deviceName: string; late: boolean; ignored: boolean };
-export type ServerSession = { id: string; status: "open" | "closed"; openedAt: string; openedBy: string; floatCents: number; salesCents: number; saleCount: number; stornoCents: number; stornoCount: number; lateCount: number; closedAt?: string; closedBy?: string; countedCents?: number; expectedCents?: number };
+export type ServerSession = { id: string; status: "open" | "closed"; openedAt: string; openedBy: string; floatCents: number; salesCents: number; saleCount: number; stornoCents: number; stornoCount: number; lateCount: number; closedAt?: string; closedBy?: string; countedCents?: number; expectedCents?: number; keptCents?: number };
 export type ViewEntry = { id: string; kind: "sale" | "storno"; amountCents: number; saleId?: string; at: string; seq: number; who: string; confirmed: boolean; late: boolean };
 
 export function sessionView(sessionId: string, local: StoredOp[], server: { session: ServerSession | null; entries: ServerEntry[] } | null) {

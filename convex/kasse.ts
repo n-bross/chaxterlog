@@ -9,7 +9,7 @@ const opValidator = v.union(
   v.object({ ...base, type: v.literal("open"), floatCents: v.number() }),
   v.object({ ...base, type: v.literal("sale"), amountCents: v.number() }),
   v.object({ ...base, type: v.literal("storno"), saleId: v.string() }),
-  v.object({ ...base, type: v.literal("close"), countedCents: v.number() }),
+  v.object({ ...base, type: v.literal("close"), countedCents: v.number(), keptCents: v.optional(v.number()) }),
 );
 // More than one evening's bookings would never be shown at once; the limit only bounds the read.
 const ENTRY_LIMIT = 5000;
@@ -46,7 +46,7 @@ async function apply(ctx: MutationCtx, actor: { id: string; username: string }, 
   if (!session) throw new ConvexError("Kasse unbekannt – die Eröffnung fehlt.");
   if (op.type === "close") {
     if (session.status === "closed") return session.closeOpId === op.id ? "duplicate" : "ignored";
-    await ctx.db.patch(session._id, { status: "closed", closedAt: op.at, closedBy: actor.username, countedCents: op.countedCents, expectedCents: expected(session), closeOpId: op.id });
+    await ctx.db.patch(session._id, { status: "closed", closedAt: op.at, closedBy: actor.username, countedCents: op.countedCents, expectedCents: expected(session), ...(op.keptCents !== undefined ? { keptCents: op.keptCents } : {}), closeOpId: op.id });
     return "ok";
   }
   if (await findEntry(ctx, op.id)) return "duplicate";
@@ -72,7 +72,7 @@ const expected = (s: Doc<"kasseSessions">) => s.floatCents + s.salesCents - s.st
 // Convex has no undefined; optional fields are left out instead.
 const defined = <T extends object>(value: T) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
 function toSession(s: Doc<"kasseSessions">): ServerSession {
-  return defined({ id: s.id, status: s.status, openedAt: s.openedAt, openedBy: s.openedBy, floatCents: s.floatCents, salesCents: s.salesCents, saleCount: s.saleCount, stornoCents: s.stornoCents, stornoCount: s.stornoCount, lateCount: s.lateCount, closedAt: s.closedAt, closedBy: s.closedBy, countedCents: s.countedCents, expectedCents: s.expectedCents });
+  return defined({ id: s.id, status: s.status, openedAt: s.openedAt, openedBy: s.openedBy, floatCents: s.floatCents, salesCents: s.salesCents, saleCount: s.saleCount, stornoCents: s.stornoCents, stornoCount: s.stornoCount, lateCount: s.lateCount, closedAt: s.closedAt, closedBy: s.closedBy, countedCents: s.countedCents, expectedCents: s.expectedCents, keptCents: s.keptCents });
 }
 
 /** Open sessions plus the latest closings with their difference. */

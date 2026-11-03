@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { createId, getDevice } from "@/lib/device";
 import { errorMessage } from "@/lib/errors";
 import {
-  buttonItem, cartAdd, cartRemove, cartTotals, changeBreakdown, countedTotal, CURRENT_KEY, customItem, DEFAULT_BUTTONS, DENOMINATIONS, denominationLabel, EMPTY_KEYPAD,
+  buttonItem, cartAdd, cartRemove, cartTotals, changeBreakdown, countedTotal, CURRENT_KEY, customItem, DEFAULT_BUTTONS, DEFAULT_FLOAT_CENTS, removal, DENOMINATIONS, denominationLabel, EMPTY_KEYPAD,
   formatCents, formatSigned, KASSE_CHANGE, keypadPress, keypadTotal, nextSeq, parseEuro, PFAND_CENTS, pruneOps, readOps, saveOp, sessionView, validateButtons,
   type CartLine, type KasseButton, type KasseOp, type Keypad, type ServerEntry, type ServerSession, type StoredOp,
 } from "@/lib/kasse";
@@ -22,11 +22,12 @@ const sessionCache = (id: string) => `chaxterkasse:session:v1:${id}`;
 
 function readJson<T>(key: string): T | null { try { return JSON.parse(localStorage.getItem(key) ?? "null") as T | null; } catch { return null; } }
 function writeJson(key: string, value: unknown) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* A full cache only costs the offline view. */ } }
+const euroText = (cents: number) => (cents / 100).toFixed(2).replace(".", ",");
 const time = (iso: string) => new Date(iso).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 const dateTime = (iso: string) => new Date(iso).toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 /** Writes one operation durably; throws if the device could not store it. */
-function record(sessionId: string, op: { type: "open"; floatCents: number } | { type: "sale"; amountCents: number } | { type: "storno"; saleId: string } | { type: "close"; countedCents: number }) {
+function record(sessionId: string, op: { type: "open"; floatCents: number } | { type: "sale"; amountCents: number } | { type: "storno"; saleId: string } | { type: "close"; countedCents: number; keptCents: number }) {
   const device = getDevice();
   const full = { id: createId(), sessionId, at: new Date().toISOString(), seq: nextSeq(localStorage), deviceId: device.id, deviceName: device.name, ...op } as KasseOp;
   saveOp(localStorage, full);
@@ -94,13 +95,14 @@ function KasseSync({ status }: { status: KasseSyncState }) {
 }
 
 function Start({ user, overview, onOpen, onJoin }: { user: { username: string }; overview: Overview | null; onOpen: (floatCents: number) => void; onJoin: (id: string) => void }) {
-  const [text, setText] = useState("");
-  const [problem, setProblem] = useState<string | null>(null);
   const last = overview?.closed[0];
-  useEffect(() => { if (last && !text) setText((last.floatCents / 100).toFixed(2).replace(".", ",")); }, [last, text]);
+  const suggested = last?.keptCents ?? DEFAULT_FLOAT_CENTS;
+  const [text, setText] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const value = text ?? euroText(suggested);
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    const cents = parseEuro(text || "0");
+    const cents = parseEuro(value || "0");
     if (cents === null) return setProblem("Bitte einen Betrag wie 50 oder 50,00 eingeben.");
     try { onOpen(cents); } catch (e) { setProblem(errorMessage(e, "Kasse konnte nicht geöffnet werden.")); }
   };
@@ -114,13 +116,13 @@ function Start({ user, overview, onOpen, onJoin }: { user: { username: string };
     </section>}
     <form className="kasse-panel" onSubmit={submit}>
       <h2>Kasse öffnen</h2>
-      <p className="page-intro">Zähle das Wechselgeld in der Kasse und trage es ein. Angemeldet als {user.username}.</p>
+      <p className="page-intro">Wechselgeld in der Kasse – normalerweise {formatCents(DEFAULT_FLOAT_CENTS)}. Nur ändern, wenn es heute anders ist. Angemeldet als {user.username}.</p>
       <label className="kasse-field">Wechselgeld
-        <span className="kasse-euro-input"><input inputMode="decimal" autoComplete="off" value={text} onChange={(e) => { setText(e.target.value); setProblem(null); }} placeholder="0,00" aria-describedby="float-hint" /><span aria-hidden="true">€</span></span>
+        <span className="kasse-euro-input"><input inputMode="decimal" autoComplete="off" value={value} onChange={(e) => { setText(e.target.value); setProblem(null); }} placeholder="0,00" aria-describedby="float-hint" /><span aria-hidden="true">€</span></span>
       </label>
-      {last && <small id="float-hint" className="kasse-hint">Letztes Mal: {formatCents(last.floatCents)}</small>}
+      {last?.keptCents !== undefined && <small id="float-hint" className="kasse-hint">Beim letzten Abschluss in der Kasse gelassen: {formatCents(last.keptCents)}</small>}
       {problem && <p role="alert" className="error-message">{problem}</p>}
-      <button type="submit" className="primary-button">Kasse öffnen</button>
+      <button type="submit" className="primary-button">Kasse mit {parseEuro(value || "0") === null ? "…" : formatCents(parseEuro(value || "0")!)} öffnen</button>
     </form>
   </>;
 }
@@ -183,7 +185,7 @@ function Register({ sessionId, view, buttons, canEdit, tab }: { sessionId: strin
       </div>}
     </Modal>
     {editing && <ButtonEditor buttons={buttons} onClose={() => setEditing(false)} />}
-    <CloseDialog open={closing} view={view} onClose={() => setClosing(false)} onConfirm={(countedCents) => { record(sessionId, { type: "close", countedCents }); setClosing(false); }} />
+    <CloseDialog open={closing} view={view} onClose={() => setClosing(false)} onConfirm={(countedCents, keptCents) => { record(sessionId, { type: "close", countedCents, keptCents }); setClosing(false); }} />
   </>;
   if (tab === "uebersicht") return <>
     <section className="kasse-panel kasse-status">
@@ -320,35 +322,47 @@ function ButtonEditor({ buttons, onClose }: { buttons: KasseButton[]; onClose: (
   </Modal>;
 }
 
-function CloseDialog({ open, view, onClose, onConfirm }: { open: boolean; view: View; onClose: () => void; onConfirm: (counted: number) => void }) {
+function CloseDialog({ open, view, onClose, onConfirm }: { open: boolean; view: View; onClose: () => void; onConfirm: (counted: number, kept: number) => void }) {
   const [mode, setMode] = useState<"count" | "sum">("count");
   const [counts, setCounts] = useState<Record<number, string>>({});
   const [sumText, setSumText] = useState("");
+  const [keptText, setKeptText] = useState(euroText(DEFAULT_FLOAT_CENTS));
   const [problem, setProblem] = useState<string | null>(null);
-  const counted = mode === "count" ? countedTotal(Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, Number(v) || 0]))) : parseEuro(sumText || "0");
-  const diff = counted === null ? null : counted - view.expectedCents;
+  const kept = parseEuro(keptText || "0");
+  const removed = mode === "count" ? countedTotal(Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, Number(v) || 0]))) : sumText ? parseEuro(sumText) : null;
+  const { shouldRemove, difference } = removal(view.expectedCents, kept ?? 0, removed);
+  const touched = mode === "count" ? Object.values(counts).some(Boolean) : !!sumText;
   return <Modal open={open} onClose={onClose} title="Kasse abschließen" maxWidth={520} className="interior-modal">
     <div className="modal-form kasse-close">
       {view.unconfirmed > 0 && <p role="alert" className="kasse-warning">{view.unconfirmed} {view.unconfirmed === 1 ? "Buchung ist" : "Buchungen sind"} noch nicht auf dem Server. Der Abschluss wird trotzdem auf diesem Gerät gespeichert und mit übertragen, sobald wieder Verbindung besteht.</p>}
+      <div className="kasse-remove">
+        <span className="kasse-hint">Herausnehmen</span>
+        <strong>{kept === null ? "–" : formatCents(shouldRemove)}</strong>
+        <span className="kasse-hint">Alles über {kept === null ? "…" : formatCents(kept)} – das bleibt als Wechselgeld drin.</span>
+      </div>
+      <label className="kasse-field kasse-kept">In der Kasse bleiben
+        <span className="kasse-euro-input"><input inputMode="decimal" value={keptText} onChange={(e) => setKeptText(e.target.value)} /><span aria-hidden="true">€</span></span>
+      </label>
+      <p className="kasse-hint">Zähle jetzt das herausgenommene Geld:</p>
       <div className="kasse-chips" role="group" aria-label="Zählweise">
-        <button type="button" className="secondary-button btn-small" aria-pressed={mode === "count"} onClick={() => setMode("count")}>Scheine &amp; Münzen zählen</button>
+        <button type="button" className="secondary-button btn-small" aria-pressed={mode === "count"} onClick={() => setMode("count")}>Scheine &amp; Münzen</button>
         <button type="button" className="secondary-button btn-small" aria-pressed={mode === "sum"} onClick={() => setMode("sum")}>Summe eingeben</button>
       </div>
       {mode === "count"
-        ? <div className="kasse-denoms">{DENOMINATIONS.map((value) => <label key={value}><span>{denominationLabel(value)}</span>
+        ? <div className="kasse-denoms">{DENOMINATIONS.filter((value) => value <= 10_000).map((value) => <label key={value}><span>{denominationLabel(value)}</span>
             <input inputMode="numeric" pattern="[0-9]*" placeholder="0" value={counts[value] ?? ""} onChange={(e) => setCounts((c) => ({ ...c, [value]: e.target.value.replace(/\D/g, "").slice(0, 4) }))} aria-label={`Anzahl ${denominationLabel(value)}`} />
           </label>)}</div>
-        : <label className="kasse-field">Gezählt<span className="kasse-euro-input"><input inputMode="decimal" value={sumText} onChange={(e) => setSumText(e.target.value)} placeholder="0,00" /><span aria-hidden="true">€</span></span></label>}
+        : <label className="kasse-field">Herausgenommen<span className="kasse-euro-input"><input inputMode="decimal" value={sumText} onChange={(e) => setSumText(e.target.value)} placeholder="0,00" /><span aria-hidden="true">€</span></span></label>}
       <dl className="kasse-summary">
-        <div><dt>Soll</dt><dd>{formatCents(view.expectedCents)}</dd></div>
-        <div><dt>Gezählt</dt><dd className="kasse-strong">{counted === null ? "–" : formatCents(counted)}</dd></div>
-        <div><dt>Differenz</dt><dd className="kasse-diff" data-sign={diff === null ? undefined : Math.sign(diff)}>{diff === null ? "–" : formatSigned(diff)}</dd></div>
+        <div><dt>Soll herausgenommen</dt><dd>{formatCents(shouldRemove)}</dd></div>
+        <div><dt>Gezählt</dt><dd className="kasse-strong">{removed === null || !touched ? "–" : formatCents(removed)}</dd></div>
+        <div><dt>Differenz</dt><dd className="kasse-diff" data-sign={difference === null || !touched ? undefined : Math.sign(difference)}>{difference === null || !touched ? "–" : difference === 0 ? "stimmt ✓" : formatSigned(difference)}</dd></div>
       </dl>
       {problem && <p role="alert" className="error-message">{problem}</p>}
       <div className="modal-buttons">
         <button type="button" className="secondary-button btn-small" onClick={onClose}>Weiter kassieren</button>
-        <button type="button" className="primary-button btn-small" disabled={counted === null} onClick={() => {
-          try { if (counted !== null) onConfirm(counted); } catch (e) { setProblem(errorMessage(e, "Abschluss NICHT gespeichert.")); }
+        <button type="button" className="primary-button btn-small" disabled={removed === null || kept === null || !touched} onClick={() => {
+          try { if (removed !== null && kept !== null) onConfirm(removed + kept, kept); } catch (e) { setProblem(errorMessage(e, "Abschluss NICHT gespeichert.")); }
         }}>Abschließen</button>
       </div>
     </div>
@@ -357,17 +371,18 @@ function CloseDialog({ open, view, onClose, onConfirm }: { open: boolean; view: 
 
 function Closed({ view, server, onNew }: { view: View; server: ServerSession | null; onNew: () => void }) {
   const counted = server?.countedCents ?? view.closedLocally?.countedCents ?? 0;
+  const kept = server?.keptCents ?? view.closedLocally?.keptCents ?? 0;
   const expected = server?.expectedCents ?? view.expectedCents;
-  const diff = counted - expected;
+  const { shouldRemove, difference } = removal(expected, kept, counted - kept);
   const confirmed = server?.status === "closed";
   return <section className="kasse-panel kasse-result">
     <h2>Kassenabschluss</h2>
     <dl className="kasse-summary">
-      <div><dt>Wechselgeld</dt><dd>{formatCents(view.floatCents)}</dd></div>
       <div><dt>Umsatz ({view.saleCount} {view.saleCount === 1 ? "Buchung" : "Buchungen"})</dt><dd>{formatCents(view.netCents)}</dd></div>
-      <div><dt>Soll</dt><dd>{formatCents(expected)}</dd></div>
-      <div><dt>Gezählt</dt><dd className="kasse-strong">{formatCents(counted)}</dd></div>
-      <div><dt>Differenz</dt><dd className="kasse-diff" data-sign={Math.sign(diff)}>{diff === 0 ? "stimmt ✓" : formatSigned(diff)}</dd></div>
+      <div><dt>Soll herausgenommen</dt><dd>{formatCents(shouldRemove)}</dd></div>
+      <div><dt>Herausgenommen</dt><dd className="kasse-strong">{formatCents(counted - kept)}</dd></div>
+      <div><dt>Differenz</dt><dd className="kasse-diff" data-sign={Math.sign(difference ?? 0)}>{difference === 0 ? "stimmt ✓" : formatSigned(difference ?? 0)}</dd></div>
+      <div><dt>Bleibt in der Kasse</dt><dd>{formatCents(kept)}</dd></div>
     </dl>
     <p className="kasse-hint">{confirmed ? `✓ Auf dem Server gespeichert${server?.closedBy ? ` von ${server.closedBy}` : ""}.` : "… Abschluss ist auf diesem Gerät gespeichert und wird übertragen."}</p>
     {(server?.lateCount ?? 0) > 0 && <p className="kasse-warning">{server!.lateCount} Buchung(en) kamen erst nach dem Abschluss an (z. B. von einem Gerät, das offline war).</p>}
@@ -380,15 +395,16 @@ function History({ sessions }: { sessions: ServerSession[] }) {
   return <section className="kasse-panel kasse-history">
     <h2>Letzte Abschlüsse</h2>
     <table>
-      <thead><tr><th>Geöffnet</th><th>Umsatz</th><th>Soll</th><th>Gezählt</th><th>Differenz</th></tr></thead>
+      <thead><tr><th>Abend</th><th>Umsatz</th><th>Herausgen.</th><th>Differenz</th></tr></thead>
       <tbody>{sessions.map((s) => {
-        const diff = (s.countedCents ?? 0) - (s.expectedCents ?? 0);
+        // Older closings have no kept float; their whole count is compared with the whole expected amount.
+        const kept = s.keptCents ?? 0;
+        const { difference } = removal(s.expectedCents ?? 0, kept, (s.countedCents ?? 0) - kept);
         return <tr key={s.id}>
-          <td>{dateTime(s.openedAt)}<br /><small className="kasse-hint">{s.openedBy}{s.closedBy && s.closedBy !== s.openedBy ? ` → ${s.closedBy}` : ""}</small></td>
+          <td>{dateTime(s.openedAt)}<br /><small className="kasse-hint">{s.closedBy ?? s.openedBy}</small></td>
           <td>{formatCents(s.salesCents - s.stornoCents)}</td>
-          <td>{formatCents(s.expectedCents ?? 0)}</td>
-          <td>{formatCents(s.countedCents ?? 0)}</td>
-          <td className="kasse-diff" data-sign={Math.sign(diff)}>{formatSigned(diff)}{s.lateCount > 0 && <small className="kasse-late" title="Nachträgliche Buchungen nach dem Abschluss"> +{s.lateCount} nachträgl.</small>}</td>
+          <td>{s.keptCents === undefined ? "–" : formatCents((s.countedCents ?? 0) - kept)}</td>
+          <td className="kasse-diff" data-sign={Math.sign(difference ?? 0)}>{difference === 0 ? "✓" : formatSigned(difference ?? 0)}{s.lateCount > 0 && <small className="kasse-late" title="Nachträgliche Buchungen nach dem Abschluss"> +{s.lateCount} nachträgl.</small>}</td>
         </tr>;
       })}</tbody>
     </table>

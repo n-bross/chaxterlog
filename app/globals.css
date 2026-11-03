@@ -1824,3 +1824,7 @@ select { background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 
 .kasse-status { gap: 14px; }
 .kasse-status-main { display: flex; flex-direction: column; }
 .kasse-status-main strong { font-size: 32px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+.kasse-remove { display: flex; flex-direction: column; padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); }
+.kasse-remove strong { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--accent); }
+.kasse-kept .kasse-euro-input input { font-size: 17px; }

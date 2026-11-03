@@ -26,7 +26,7 @@ const make = (sessionId: string) => ({
   open: (floatCents: number): KasseOp => ({ type: "open", id: crypto.randomUUID(), sessionId, at: new Date().toISOString(), seq: seq++, deviceId, deviceName: "Kasse", floatCents }),
   sale: (amountCents: number): KasseOp => ({ type: "sale", id: crypto.randomUUID(), sessionId, at: new Date().toISOString(), seq: seq++, deviceId, deviceName: "Kasse", amountCents }),
   storno: (saleId: string): KasseOp => ({ type: "storno", id: crypto.randomUUID(), sessionId, at: new Date().toISOString(), seq: seq++, deviceId, deviceName: "Kasse", saleId }),
-  close: (countedCents: number): KasseOp => ({ type: "close", id: crypto.randomUUID(), sessionId, at: new Date().toISOString(), seq: seq++, deviceId, deviceName: "Kasse", countedCents }),
+  close: (countedCents: number, keptCents?: number): KasseOp => ({ type: "close", id: crypto.randomUUID(), sessionId, at: new Date().toISOString(), seq: seq++, deviceId, deviceName: "Kasse", countedCents, ...(keptCents !== undefined ? { keptCents } : {}) }),
 });
 
 describe("Kasse", () => {
@@ -66,11 +66,11 @@ describe("Kasse", () => {
   test("Abschluss speichert Soll, Ist und nachträgliche Buchungen werden markiert", async () => {
     const t = setup(), anna = await signIn(t, "anna");
     const id = crypto.randomUUID(), k = make(id);
-    const close = k.close(6400);
+    const close = k.close(6400, 5000);
     await anna.mutation(api.kasse.sync, { ops: [k.open(5000), k.sale(1000), k.sale(500), close] });
     let overview = await anna.query(api.kasse.overview, {});
     expect(overview.open).toHaveLength(0);
-    expect(overview.closed[0]).toMatchObject({ id, status: "closed", expectedCents: 6500, countedCents: 6400, closedBy: "anna" });
+    expect(overview.closed[0]).toMatchObject({ id, status: "closed", expectedCents: 6500, countedCents: 6400, keptCents: 5000, closedBy: "anna" });
     expect((await anna.mutation(api.kasse.sync, { ops: [close] }))[0].status).toBe("duplicate");
     expect((await anna.mutation(api.kasse.sync, { ops: [k.close(1)] }))[0].status).toBe("ignored");
     // An offline second device delivers a sale after the closing: kept, not lost, but flagged.
