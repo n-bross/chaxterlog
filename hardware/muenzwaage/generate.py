@@ -1,9 +1,12 @@
-"""Münzwaage für den Kasseneinsatz: erzeugt die STL-Dateien.
+"""Münzwaage: acht gewogene Münzmulden für 2 € bis 1 ct. Erzeugt die STL-Dateien.
 
-Ein Modul pro Münzstreifen: Grundplatte mit Wägezelle (47 x 12 x 6 mm, TAL221-Bauform),
-HX711-Fach und vier einstellbaren Überlast-Anschlägen; darauf ein Träger, in den der
-vorhandene gedruckte Münzstreifen gelegt wird. Die Module werden seitlich mit
-Schwalbenschwänzen zusammengesteckt. Das mittlere Modul hat zusätzlich das ESP32-Fach.
+Jede Münzsorte hat eine eigene Mulde auf einer eigenen Wägezelle (47 x 12 x 6 mm,
+TAL221-Bauform). Weil die Waage zählt, liegen die Münzen lose in der Mulde – kein Stapeln.
+Zwei Reihen à vier Mulden; jede Reihe ist eine Grundplatte, die beiden werden mit
+Schwalbenschwänzen zusammengesteckt.
+
+    hinten: 2 €   1 €   50 ct  20 ct   (500-g-Zellen)
+    vorne:  10 ct 5 ct  2 ct   1 ct    (300-g-Zellen)
 
 Aufruf:  python generate.py            (Maße unten anpassen, dann neu erzeugen)
 Benötigt: pip install manifold3d numpy matplotlib
@@ -15,71 +18,64 @@ import struct
 from pathlib import Path
 
 import numpy as np
-from manifold3d import CrossSection, Manifold
+from manifold3d import CrossSection, FillRule, JoinType, Manifold
 
 # ---------------------------------------------------------------- Maße (mm) ---
-# Vorhandener Münzstreifen (bitte nachmessen!)
-STRIP_LEN = 140.0       # Länge des Streifens
-STRIP_W = 45.0          # Breite des Streifens
-STRIP_CLEARANCE = 0.4   # Luft rundum, damit der Streifen leicht rein und raus geht
+ROWS = (("2 €", "1 €", "50 ct", "20 ct"), ("10 ct", "5 ct", "2 ct", "1 ct"))  # hinten, vorne
 
-# Träger (hier liegt der Streifen drin)
-FLOOR = 3.0             # Bodendicke
-RIM_WALL = 1.6          # Randdicke
-RIM_H = 4.0             # Randhöhe über dem Boden
-GRIP_W = 22.0           # Grifflücke im Rand an den Schmalseiten (0 = keine)
-
-# Abstand zwischen zwei Trägern – sie dürfen sich nie berühren
-LANE_GAP = 2.0
+# Mulde
+BOWL_W = 60.0           # Breite (links/rechts)
+BOWL_D = 78.0           # Tiefe (vorne/hinten)
+BOWL_H = 28.0           # Höhe außen
+BOWL_FLOOR = 3.0
+BOWL_WALL = 2.0
+BOWL_SLOPE = 9.0        # so weit laufen die Wände nach unten zusammen (Münzen rutschen zur Mitte)
+BOWL_FRONT_DROP = 8.0   # Vorderkante niedriger, damit man leichter hineingreift
+LABEL_DEPTH = 0.8
+GAP = 2.0               # Luft zwischen zwei Mulden – sie dürfen sich nie berühren
 
 # Wägezelle (TAL221-Bauform)
 CELL_L, CELL_W, CELL_H = 47.0, 12.0, 6.0
-CLAMP_LEN = 14.0        # Länge des festen Endblocks der Zelle (nur bis zur Verjüngung/Bohrung!)
+CLAMP_LEN = 14.0          # Länge des massiven Endblocks der Zelle
 SCREW_SLOT = (2.5, 11.5)  # Langloch für die M3-Schrauben, Abstand vom Zellenende (von, bis)
 
 # Höhen
-BASE_T = 5.0            # Grundplatte
+BASE_T = 5.0
 PAD_H = 2.0             # Sockel unter dem festen Zellenende (Luft unter dem freien Ende)
 SPACER_H = 2.0          # Abstandshalter auf dem freien Ende (Luft über dem festen Ende)
 
 # Überlast-Anschläge (M3x10 Zylinderkopf, von unten eingedreht)
-STOP_INSET_X = 14.0
-STOP_INSET_Y = 7.0
+STOP_INSET = 8.0
 STOP_POST_D = 8.0
-STOP_POST_TOP_GAP = 3.0   # Pfosten endet so weit unter dem Träger; die Schraube überbrückt den Rest
-STOP_COUNTERBORE = 6.0    # Senkung für den Schraubenkopf (von unten)
+STOP_POST_TOP_GAP = 3.0
+STOP_COUNTERBORE = 6.0
 
 # Elektronik
 HX_L, HX_W, HX_DEPTH = 36.0, 22.0, 1.0      # HX711-Platine (Mulde zum Fixieren mit Klebepad)
 ESP_L, ESP_W, ESP_DEPTH = 24.0, 19.0, 1.5   # ESP32-C3 SuperMini
-CHANNEL_W, CHANNEL_DEPTH = 6.0, 2.5         # Kabelkanal quer über alle Module
 
-# Schwalbenschwanz-Verbindung zwischen den Modulen
+# Schwalbenschwanz zwischen den beiden Reihen
 DOVE_NECK, DOVE_TIP, DOVE_DEPTH, DOVE_FIT = 6.0, 10.0, 5.0, 0.25
-DOVE_X = 35.0
 
 M3_CLEAR_R = 1.7
-M3_TAP_R = 1.25          # Kernloch: Schraube schneidet ihr Gewinde selbst in den Kunststoff
-M3_HEAD_R = 3.1          # Zylinderkopf 5,5 mm + Luft
+M3_TAP_R = 1.25
+M3_HEAD_R = 3.1
 M3_HEAD_H = 3.2
-M3_CSK_R = 3.0           # Senkkopf 6 mm
+M3_CSK_R = 3.0
 M3_CSK_H = 1.7
-
 SEG = 48
 
 # ------------------------------------------------------------- abgeleitet ----
-CARRIER_L = STRIP_LEN + 2 * (STRIP_CLEARANCE + RIM_WALL)
-CARRIER_W = STRIP_W + 2 * (STRIP_CLEARANCE + RIM_WALL)
-BASE_L = CARRIER_L
-BASE_W = CARRIER_W + LANE_GAP
-Z_PAD = BASE_T
-Z_CELL = Z_PAD + PAD_H
+PITCH_X = BOWL_W + GAP
+PITCH_Y = BOWL_D + GAP
+ROW_L = 4 * PITCH_X
+Z_CELL = BASE_T + PAD_H
 Z_SPACER = Z_CELL + CELL_H
-Z_CARRIER = Z_SPACER + SPACER_H
-FIXED_X0 = -CELL_L / 2                      # festes Ende links
-FREE_X1 = CELL_L / 2                        # freies Ende rechts
-HX_X0 = FREE_X1 + 3.0
-CHANNEL_X = BASE_L / 2 - 3.0 - CHANNEL_W / 2
+Z_BOWL = Z_SPACER + SPACER_H
+# Die Zelle liegt in y-Richtung: festes Ende hinten (+y), freies Ende vorne (-y).
+FIXED_Y1 = CELL_L / 2
+FREE_Y0 = -CELL_L / 2
+STATION_X = [(i - 1.5) * PITCH_X for i in range(4)]
 
 
 def box(x0, x1, y0, y1, z0, z1) -> Manifold:
@@ -90,9 +86,13 @@ def cyl(x, y, z0, z1, r, r_top=None) -> Manifold:
     return Manifold.cylinder(z1 - z0, r, r if r_top is None else r_top, SEG).translate([x, y, z0])
 
 
-def slot(xa, xb, y, z0, z1, r, r_top=None) -> Manifold:
-    """Langloch in x-Richtung (Hülle zweier Zylinder)."""
-    return Manifold.batch_hull([cyl(xa, y, z0, z1, r, r_top), cyl(xb, y, z0, z1, r, r_top)])
+def slot_y(x, ya, yb, z0, z1, r, r_top=None) -> Manifold:
+    return Manifold.batch_hull([cyl(x, ya, z0, z1, r, r_top), cyl(x, yb, z0, z1, r, r_top)])
+
+
+def rounded_rect(w, d, r) -> CrossSection:
+    r = min(r, w / 2 - 0.01, d / 2 - 0.01)
+    return CrossSection.square([w - 2 * r, d - 2 * r], True).offset(r, JoinType.Round, circular_segments=SEG)
 
 
 def dovetail(fit: float) -> Manifold:
@@ -101,116 +101,133 @@ def dovetail(fit: float) -> Manifold:
     return poly.extrude(BASE_T + 2).translate([0, 0, -1])
 
 
-def fixed_slots():
-    a, b = FIXED_X0 + SCREW_SLOT[0], FIXED_X0 + SCREW_SLOT[1]
-    return a, b
+def fixed_slot():
+    return FIXED_Y1 - SCREW_SLOT[1], FIXED_Y1 - SCREW_SLOT[0]
 
 
-def free_slots():
-    a, b = FREE_X1 - SCREW_SLOT[1], FREE_X1 - SCREW_SLOT[0]
-    return a, b
+def free_slot():
+    return FREE_Y0 + SCREW_SLOT[0], FREE_Y0 + SCREW_SLOT[1]
 
 
 def stop_positions():
-    sx, sy = BASE_L / 2 - STOP_INSET_X, CARRIER_W / 2 - STOP_INSET_Y
+    sx, sy = BOWL_W / 2 - STOP_INSET, BOWL_D / 2 - STOP_INSET
     return [(x, y) for x in (-sx, sx) for y in (-sy, sy)]
 
 
-def base(with_esp: bool) -> Manifold:
-    m = box(-BASE_L / 2, BASE_L / 2, -BASE_W / 2, BASE_W / 2, 0, BASE_T)
-    # Sockel unter dem festen Zellenende
-    m += box(FIXED_X0, FIXED_X0 + CLAMP_LEN, -CELL_W / 2, CELL_W / 2, Z_PAD, Z_CELL)
-    # Anschlag-Pfosten
-    post_top = Z_CARRIER - STOP_POST_TOP_GAP
+def station(with_esp: bool) -> tuple[Manifold, list[Manifold]]:
+    """Aufbauten und Ausschnitte einer Wägestelle (Mitte = Ursprung)."""
+    add = box(-CELL_W / 2, CELL_W / 2, FIXED_Y1 - CLAMP_LEN, FIXED_Y1, BASE_T - 0.01, Z_CELL)
     for x, y in stop_positions():
-        m += cyl(x, y, BASE_T - 0.01, post_top, STOP_POST_D / 2)
-    # Schwalbenschwänze: Zapfen auf +y, Nut auf -y
-    for x in (-DOVE_X, DOVE_X):
-        m += dovetail(0).translate([x, BASE_W / 2 - 0.01, 0]) ^ box(x - 20, x + 20, BASE_W / 2 - 1, BASE_W / 2 + 20, 0, BASE_T)
-
-    cut = []
-    a, b = fixed_slots()
-    cut.append(slot(a, b, 0, -1, Z_CELL + 1, M3_CLEAR_R))
-    cut.append(slot(a, b, 0, -1, M3_HEAD_H, M3_HEAD_R))
+        add += cyl(x, y, BASE_T - 0.01, Z_BOWL - STOP_POST_TOP_GAP, STOP_POST_D / 2)
+    a, b = fixed_slot()
+    cut = [slot_y(0, a, b, -1, Z_CELL + 1, M3_CLEAR_R), slot_y(0, a, b, -1, M3_HEAD_H, M3_HEAD_R)]
     for x, y in stop_positions():
-        cut.append(cyl(x, y, -1, Z_CARRIER, M3_TAP_R))
-        cut.append(cyl(x, y, -1, STOP_COUNTERBORE, M3_HEAD_R))
-    for x in (-DOVE_X, DOVE_X):
-        cut.append(dovetail(DOVE_FIT).translate([x, -BASE_W / 2 - 0.01, 0]))
-    # HX711-Mulde neben dem freien Zellenende
-    cut.append(box(HX_X0, HX_X0 + HX_L, -HX_W / 2, HX_W / 2, BASE_T - HX_DEPTH, BASE_T + 1))
-    # Kabelkanal quer über die ganze Breite (läuft über alle Module durch)
-    cut.append(box(CHANNEL_X - CHANNEL_W / 2, CHANNEL_X + CHANNEL_W / 2, -BASE_W, BASE_W, BASE_T - CHANNEL_DEPTH, BASE_T + 1))
+        cut += [cyl(x, y, -1, Z_BOWL, M3_TAP_R), cyl(x, y, -1, STOP_COUNTERBORE, M3_HEAD_R)]
+    hx0 = CELL_W / 2 + 1.5
+    cut.append(box(hx0, hx0 + HX_W, -HX_L / 2, HX_L / 2, BASE_T - HX_DEPTH, BASE_T + 1))
     if with_esp:
-        # ESP32 am linken Rand, USB-C zeigt nach außen
-        cut.append(box(-BASE_L / 2 - 1, -BASE_L / 2 + ESP_L, -ESP_W / 2, ESP_W / 2, BASE_T - ESP_DEPTH, BASE_T + 1))
-    for c in cut:
+        # links neben der Zelle, USB-C zeigt nach links aus dem Gerät
+        cut.append(box(-PITCH_X / 2 - 1, -PITCH_X / 2 + ESP_L, -ESP_W / 2, ESP_W / 2, BASE_T - ESP_DEPTH, BASE_T + 1))
+    return add, cut
+
+
+def base_row(front: bool) -> Manifold:
+    """Grundplatte einer Reihe. Vorne: Zapfen hinten + ESP32 links. Hinten: Nuten vorne."""
+    m = box(-ROW_L / 2, ROW_L / 2, -PITCH_Y / 2, PITCH_Y / 2, 0, BASE_T)
+    cuts: list[Manifold] = []
+    for i, x in enumerate(STATION_X):
+        add, cut = station(with_esp=front and i == 0)
+        m += add.translate([x, 0, 0])
+        cuts += [c.translate([x, 0, 0]) for c in cut]
+    joint_x = [-PITCH_X, 0.0, PITCH_X]
+    if front:
+        for x in joint_x:
+            m += dovetail(0).translate([x, PITCH_Y / 2 - 0.01, 0]) ^ box(x - 20, x + 20, PITCH_Y / 2 - 1, PITCH_Y / 2 + 20, 0, BASE_T)
+    else:
+        cuts += [dovetail(DOVE_FIT).translate([x, -PITCH_Y / 2 - 0.01, 0]) for x in joint_x]
+    for c in cuts:
         m -= c
     return m
 
 
-def carrier() -> Manifold:
-    """Träger, liegend gedruckt (Boden auf dem Druckbett)."""
-    m = box(-CARRIER_L / 2, CARRIER_L / 2, -CARRIER_W / 2, CARRIER_W / 2, 0, FLOOR + RIM_H)
-    m -= box(-CARRIER_L / 2 + RIM_WALL, CARRIER_L / 2 - RIM_WALL, -CARRIER_W / 2 + RIM_WALL, CARRIER_W / 2 - RIM_WALL, FLOOR, FLOOR + RIM_H + 1)
-    if GRIP_W > 0:
-        m -= box(-CARRIER_L, CARRIER_L, -GRIP_W / 2, GRIP_W / 2, FLOOR + 1.0, FLOOR + RIM_H + 1)
-    a, b = free_slots()
-    m -= slot(a, b, 0, -1, FLOOR + 1, M3_CLEAR_R)
-    m -= slot(a, b, 0, FLOOR - M3_CSK_H, FLOOR + 0.01, M3_CLEAR_R, M3_CSK_R)
+def label(text: str, height: float) -> Manifold:
+    """Prägeschrift als Körper (liegt in der xz-Ebene, Tiefe in +y)."""
+    from matplotlib.font_manager import FontProperties
+    from matplotlib.textpath import TextPath
+
+    path = TextPath((0, 0), text, size=height, prop=FontProperties(family="DejaVu Sans", weight="bold"))
+    polys = [p.tolist() for p in path.to_polygons(closed_only=True) if len(p) > 2]
+    cs = CrossSection(polys, FillRule.EvenOdd)
+    (x0, y0), (x1, y1) = cs.bounds()[:2], cs.bounds()[2:]
+    cs = cs.translate([-(x0 + x1) / 2, -(y0 + y1) / 2])
+    return cs.extrude(LABEL_DEPTH + 1).rotate([90, 0, 0]).translate([0, LABEL_DEPTH, 0])
+
+
+def bowl(text: str) -> Manifold:
+    """Münzmulde, aufrecht gedruckt (Boden auf dem Druckbett)."""
+    outer = rounded_rect(BOWL_W, BOWL_D, 6).extrude(BOWL_H)
+    top = rounded_rect(BOWL_W - 2 * BOWL_WALL, BOWL_D - 2 * BOWL_WALL, 4).extrude(0.01).translate([0, 0, BOWL_H])
+    bottom = rounded_rect(BOWL_W - 2 * (BOWL_WALL + BOWL_SLOPE), BOWL_D - 2 * (BOWL_WALL + BOWL_SLOPE), 8).extrude(0.01).translate([0, 0, BOWL_FLOOR])
+    m = outer - Manifold.batch_hull([top, bottom, top.translate([0, 0, 5])])
+    # Vorderkante absenken (schräg), damit man gut hineingreift
+    if BOWL_FRONT_DROP > 0:
+        wedge = Manifold.batch_hull([
+            box(-BOWL_W, BOWL_W, -BOWL_D / 2 - 1, -BOWL_D / 2 + 0.01, BOWL_H - BOWL_FRONT_DROP, BOWL_H + 1),
+            box(-BOWL_W, BOWL_W, -BOWL_D / 6, -BOWL_D / 6 + 0.01, BOWL_H, BOWL_H + 1),
+        ])
+        m -= wedge
+    # Senkschrauben am freien Zellenende
+    a, b = free_slot()
+    m -= slot_y(0, a, b, -1, BOWL_FLOOR + 1, M3_CLEAR_R)
+    m -= slot_y(0, a, b, BOWL_FLOOR - M3_CSK_H, BOWL_FLOOR + 0.01, M3_CLEAR_R, M3_CSK_R)
+    # Beschriftung vorne
+    text_h = (BOWL_H - BOWL_FRONT_DROP) * 0.42
+    m -= label(text, text_h).translate([0, -BOWL_D / 2 - 0.01, (BOWL_H - BOWL_FRONT_DROP) / 2])
     return m
 
 
 def spacer() -> Manifold:
-    a, b = free_slots()
-    m = box(FREE_X1 - CLAMP_LEN, FREE_X1, -CELL_W / 2, CELL_W / 2, 0, SPACER_H)
-    m -= slot(a, b, 0, -1, SPACER_H + 1, M3_CLEAR_R)
-    return m.translate([-(FREE_X1 - CLAMP_LEN / 2), 0, 0])
+    a, b = free_slot()
+    m = box(-CELL_W / 2, CELL_W / 2, FREE_Y0, FREE_Y0 + CLAMP_LEN, 0, SPACER_H)
+    m -= slot_y(0, a, b, -1, SPACER_H + 1, M3_CLEAR_R)
+    return m.translate([0, -(FREE_Y0 + CLAMP_LEN / 2), 0])
 
 
 def cell_dummy() -> Manifold:
-    return box(-CELL_L / 2, CELL_L / 2, -CELL_W / 2, CELL_W / 2, Z_CELL, Z_SPACER)
+    return box(-CELL_W / 2, CELL_W / 2, -CELL_L / 2, CELL_L / 2, Z_CELL, Z_SPACER)
+
+
+def board_dummy(w, l, x, y, h=4.0) -> Manifold:
+    return box(x, x + w, y - l / 2, y + l / 2, BASE_T - 1, BASE_T - 1 + h)
 
 
 # ------------------------------------------------------------------ Export ---
 def mesh_arrays(m: Manifold):
     mesh = m.to_mesh()
-    verts = np.asarray(mesh.vert_properties)[:, :3]
-    tris = np.asarray(mesh.tri_verts)
-    return verts, tris
+    return np.asarray(mesh.vert_properties)[:, :3], np.asarray(mesh.tri_verts)
 
 
 def write_stl(m: Manifold, path: Path) -> None:
     verts, tris = mesh_arrays(m)
+    p = verts[tris]
+    n = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
+    n /= np.linalg.norm(n, axis=1, keepdims=True) + 1e-12
+    rec = np.zeros(len(tris), dtype=[("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")])
+    rec["n"], rec["v"] = n, p
     with path.open("wb") as f:
         f.write(b"Muenzwaage".ljust(80, b" "))
         f.write(struct.pack("<I", len(tris)))
-        for t in tris:
-            p = verts[t]
-            n = np.cross(p[1] - p[0], p[2] - p[0])
-            length = np.linalg.norm(n)
-            n = n / length if length else n
-            f.write(struct.pack("<12fH", *n, *p[0], *p[1], *p[2], 0))
+        f.write(rec.tobytes())
 
 
-def module_assembly(with_esp: bool, explode: float = 0.0) -> list[tuple[Manifold, str]]:
-    sp = spacer().translate([FREE_X1 - CLAMP_LEN / 2, 0, Z_SPACER + explode])
-    return [
-        (base(with_esp), "#d9b44a"),
-        (cell_dummy().translate([0, 0, explode * 0.5]), "#a8adb3"),
-        (sp, "#4a90d9"),
-        (carrier().translate([0, 0, Z_CARRIER + explode * 2]), "#f2d27a"),
-    ]
-
-
-def render(parts: list[tuple[Manifold, str]], path: Path, elev: float, azim: float, title: str, width: int = 1200) -> None:
+def render(parts: list[tuple[Manifold, str]], path: Path, elev: float, azim: float, title: str, width: int = 1300) -> None:
     """Kleiner Z-Buffer-Renderer (orthografisch), damit die Vorschau ohne CAD-Programm klappt."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     e, a = math.radians(elev), math.radians(azim)
-    view = np.array([math.cos(e) * math.cos(a), math.cos(e) * math.sin(a), math.sin(e)])  # zur Kamera
+    view = np.array([math.cos(e) * math.cos(a), math.cos(e) * math.sin(a), math.sin(e)])
     right = np.cross([0, 0, 1], view); right /= np.linalg.norm(right)
     up = np.cross(view, right)
     light = 0.6 * view + 0.5 * up + 0.3 * right; light /= np.linalg.norm(light)
@@ -222,8 +239,7 @@ def render(parts: list[tuple[Manifold, str]], path: Path, elev: float, azim: flo
     proj = np.stack([polys @ right, polys @ up, polys @ view], -1)
     lo, hi = proj[..., :2].reshape(-1, 2).min(0), proj[..., :2].reshape(-1, 2).max(0)
     scale = (width - 40) / (hi - lo).max()
-    h = int((hi - lo)[1] * scale) + 40
-    w = int((hi - lo)[0] * scale) + 40
+    w, h = int((hi - lo)[0] * scale) + 40, int((hi - lo)[1] * scale) + 40
     px = (proj[..., 0] - lo[0]) * scale + 20
     py = (hi[1] - proj[..., 1]) * scale + 20
     depth = np.full((h, w), -np.inf); img = np.ones((h, w, 3))
@@ -234,12 +250,10 @@ def render(parts: list[tuple[Manifold, str]], path: Path, elev: float, azim: flo
         x, y, z = px[i], py[i], proj[i, :, 2]
         x0, x1 = max(int(x.min()), 0), min(int(x.max()) + 1, w - 1)
         y0, y1 = max(int(y.min()), 0), min(int(y.max()) + 1, h - 1)
-        if x1 < x0 or y1 < y0:
+        d = (y[1] - y[2]) * (x[0] - x[2]) + (x[2] - x[1]) * (y[0] - y[2])
+        if x1 < x0 or y1 < y0 or abs(d) < 1e-9:
             continue
         gx, gy = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
-        d = (y[1] - y[2]) * (x[0] - x[2]) + (x[2] - x[1]) * (y[0] - y[2])
-        if abs(d) < 1e-9:
-            continue
         l0 = ((y[1] - y[2]) * (gx - x[2]) + (x[2] - x[1]) * (gy - y[2])) / d
         l1 = ((y[2] - y[0]) * (gx - x[2]) + (x[0] - x[2]) * (gy - y[2])) / d
         l2 = 1 - l0 - l1
@@ -249,7 +263,6 @@ def render(parts: list[tuple[Manifold, str]], path: Path, elev: float, azim: flo
         hit = inside & (zz > sub)
         sub[hit] = zz[hit]
         img[y0:y1 + 1, x0:x1 + 1][hit] = cols[i] * shade[i]
-    # Kanten betonen: Tiefensprünge dunkel zeichnen
     finite = np.where(np.isfinite(depth), depth, depth[np.isfinite(depth)].min() - 50)
     edge = (np.abs(np.diff(finite, axis=0, prepend=finite[:1])) > 1.5) | (np.abs(np.diff(finite, axis=1, prepend=finite[:, :1])) > 1.5)
     img[edge] *= 0.35
@@ -260,31 +273,46 @@ def render(parts: list[tuple[Manifold, str]], path: Path, elev: float, azim: flo
     plt.close(fig)
 
 
+def file_name(text: str) -> str:
+    return text.replace(" €", "euro").replace(" ct", "cent")
+
+
 def main() -> None:
     out = Path(__file__).resolve().parent
     stl = out / "stl"
     stl.mkdir(exist_ok=True)
-    parts = {
-        "grundplatte.stl": base(False),
-        "grundplatte_mit_esp32.stl": base(True),
-        "traeger.stl": carrier(),
-        "abstandshalter.stl": spacer(),
-    }
+    for old in stl.glob("*.stl"):
+        old.unlink()
+    parts = {"grundplatte_hinten.stl": base_row(False), "grundplatte_vorne.stl": base_row(True), "abstandshalter.stl": spacer()}
+    for row in ROWS:
+        for text in row:
+            parts[f"mulde_{file_name(text)}.stl"] = bowl(text)
     for name, m in parts.items():
         assert m.status().name == "NoError", name
         write_stl(m, stl / name)
-        lo, hi = np.asarray(m.bounding_box()[:3]), np.asarray(m.bounding_box()[3:])
-        size = hi - lo
-        print(f"{name:28s} {size[0]:6.1f} x {size[1]:5.1f} x {size[2]:4.1f} mm  {m.volume() / 1000:5.1f} cm³")
+        bb = np.asarray(m.bounding_box())
+        size = bb[3:] - bb[:3]
+        print(f"{name:26s} {size[0]:6.1f} x {size[1]:5.1f} x {size[2]:4.1f} mm  {m.volume() / 1000:5.1f} cm³")
 
-    # Gesamtansicht: fünf Module nebeneinander, mittleres mit ESP32
-    full: list[tuple[Manifold, str]] = []
-    for i in range(5):
-        for m, c in module_assembly(i == 2):
-            full.append((m.translate([0, (i - 2) * BASE_W, 0]), c))
-    render(full, out / "vorschau_gesamt.png", 28, -60, "5 Module zusammengesteckt")
-    render(module_assembly(True, explode=12), out / "vorschau_modul.png", 20, -55, "Ein Modul (auseinandergezogen)")
-    print(f"Gesamtmaß: {BASE_L:.1f} x {5 * BASE_W:.1f} mm, Höhe bis Trägerboden-Oberseite {Z_CARRIER + FLOOR:.1f} mm")
+    scene: list[tuple[Manifold, str]] = []
+    for r, (row, y) in enumerate(zip(ROWS, (PITCH_Y, 0.0))):
+        front = r == 1
+        scene.append((base_row(front).translate([0, y - PITCH_Y / 2, 0]), "#c9a43c"))
+        for i, (text, x) in enumerate(zip(row, STATION_X)):
+            scene.append((bowl(text).translate([x, y - PITCH_Y / 2, Z_BOWL]), "#e8c766" if r == 0 else "#d8d8d8"))
+    render(scene, out / "vorschau_gesamt.png", 32, -70, "8 Münzmulden – hinten 2 € bis 20 ct, vorne 10 ct bis 1 ct")
+
+    ex = 14.0
+    st = [
+        (base_row(True).translate([0, -PITCH_Y / 2, 0]) ^ box(-ROW_L / 2, -ROW_L / 2 + PITCH_X, -PITCH_Y, PITCH_Y, -1, 50), "#c9a43c"),
+        (cell_dummy().translate([STATION_X[0], -PITCH_Y / 2, ex * 0.5]), "#a8adb3"),
+        (board_dummy(HX_W, HX_L, STATION_X[0] + CELL_W / 2 + 1.5, -PITCH_Y / 2), "#7b3fa0"),
+        (board_dummy(ESP_W * 0 + ESP_L, ESP_W, -ROW_L / 2 - 1, -PITCH_Y / 2, 3), "#2f6f3a"),
+        (spacer().translate([STATION_X[0], -PITCH_Y / 2 + FREE_Y0 + CLAMP_LEN / 2, Z_SPACER + ex]), "#4a90d9"),
+        (bowl("10 ct").translate([STATION_X[0], -PITCH_Y / 2, Z_BOWL + ex * 2.5]), "#d8d8d8"),
+    ]
+    render(st, out / "vorschau_modul.png", 22, -60, "Eine Wägestelle, auseinandergezogen (Zelle grau, HX711 lila, ESP32 grün)")
+    print(f"Gesamtmaß: {ROW_L:.0f} x {2 * PITCH_Y:.0f} mm, Höhe {Z_BOWL + BOWL_H:.0f} mm")
 
 
 if __name__ == "__main__":
