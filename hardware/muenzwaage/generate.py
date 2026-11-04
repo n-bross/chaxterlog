@@ -2,7 +2,8 @@
 
 Jede Münzsorte hat eine eigene Mulde auf einer eigenen Wägezelle (47 x 12 x 6 mm,
 TAL221-Bauform). Weil die Waage zählt, liegen die Münzen lose in der Mulde – kein Stapeln.
-Zwei Reihen à vier Mulden; jede Reihe ist eine Grundplatte, die beiden werden mit
+Vorne fünf große Mulden für die oft gebrauchten Münzen, hinten drei kleine für 5/2/1 ct
+und das Elektronikfach mit dem ESP32; jede Reihe ist eine Grundplatte, die beiden werden mit
 Schwalbenschwänzen zusammengesteckt. Breite jeder Mulde und Tiefe jeder Reihe sind frei
 einstellbar: oft benutzte Münzen bekommen mehr Platz.
 
@@ -21,12 +22,13 @@ from manifold3d import CrossSection, FillRule, JoinType, Manifold
 # ---------------------------------------------------------------- Maße (mm) ---
 # Aufteilung: pro Reihe die Tiefe der Mulden und pro Mulde (Beschriftung, Breite).
 # Beide Reihen müssen zusammen gleich breit sein (Breite + GAP je Mulde).
-# Vorne (nah an der Hand) die oft gebrauchten Münzen, hinten die selteneren.
+# Vorne (nah an der Hand) die oft gebrauchten Münzen, hinten die seltenen und das Elektronikfach.
+ELECTRONICS = "Elektronik"
 LAYOUT = {
-    "hinten": {"depth": 64.0, "bowls": [("10 ct", 70.0), ("5 ct", 66.0), ("2 ct", 52.0), ("1 ct", 52.0)]},
-    "vorne": {"depth": 88.0, "bowls": [("2 €", 62.0), ("1 €", 60.0), ("50 ct", 68.0), ("20 ct", 50.0)]},
+    "hinten": {"depth": 62.0, "bowls": [("5 ct", 44.0), ("2 ct", 44.0), ("1 ct", 44.0), (ELECTRONICS, 108.0)]},
+    "vorne": {"depth": 90.0, "bowls": [("2 €", 46.0), ("1 €", 50.0), ("50 ct", 54.0), ("20 ct", 46.0), ("10 ct", 42.0)]},
 }
-ESP_UNDER = "2 €"       # unter dieser Mulde sitzt der ESP32 (muss ganz links in ihrer Reihe stehen)
+COVER_WALL = 2.0        # Deckel über dem Elektronikfach
 
 # Mulde
 BOWL_H = 28.0           # Höhe außen
@@ -93,7 +95,7 @@ def stations(row: dict) -> list[tuple[str, float, float]]:
 
 ROW_L = row_length(LAYOUT["vorne"])
 assert abs(ROW_L - row_length(LAYOUT["hinten"])) < 0.01, "beide Reihen müssen gleich breit sein"
-assert all(w >= MIN_BOWL_W for r in LAYOUT.values() for _, w in r["bowls"]), f"Mulden mindestens {MIN_BOWL_W} mm breit"
+assert all(w >= MIN_BOWL_W for r in LAYOUT.values() for t, w in r["bowls"] if t != ELECTRONICS), f"Mulden mindestens {MIN_BOWL_W} mm breit"
 assert all(r["depth"] >= CELL_L + 15 for r in LAYOUT.values()), "Reihe zu flach für die Wägezelle"
 
 
@@ -133,7 +135,31 @@ def stop_positions(w, d):
     return [(x, y) for x in (-sx, sx) for y in (-sy, sy)]
 
 
-def station(w: float, d: float, with_esp: bool) -> tuple[Manifold, list[Manifold]]:
+def electronics_bay(w: float, d: float) -> tuple[Manifold, list[Manifold]]:
+    """Elektronikfach: Rahmen, über den der Deckel gestülpt wird, und Mulde für den ESP32."""
+    ow, od = w - 2 * COVER_WALL - 0.6, d - 2 * COVER_WALL - 0.6
+    add = (rounded_rect(ow, od, 4) - rounded_rect(ow - 3.2, od - 3.2, 2.4)).extrude(3).translate([0, 0, BASE_T - 0.01])
+    # ESP32 am rechten Rand, USB-C zeigt nach rechts aus dem Gerät
+    x1 = (w + GAP) / 2 + 1
+    cut = [box(x1 - 1 - ESP_L, x1, -ESP_W / 2, ESP_W / 2, BASE_T - ESP_DEPTH, BASE_T + 4)]
+    # Lücken im Rahmen für die Kabel von vorne und links
+    cut.append(box(-15, 15, -d, -od / 2 + 3, BASE_T, BASE_T + 4))
+    cut.append(box(-w, -ow / 2 + 3, -10, 10, BASE_T, BASE_T + 4))
+    return add, cut
+
+
+def cover(w: float, d: float) -> Manifold:
+    """Deckel über dem Elektronikfach, oben bündig mit den Mulden. Kopfüber gedruckt."""
+    h = Z_BOWL + BOWL_H - BASE_T
+    m = rounded_rect(w, d, 6).extrude(h) - rounded_rect(w - 2 * COVER_WALL, d - 2 * COVER_WALL, 4).extrude(h - 2).translate([0, 0, -1])
+    m -= box(-15, 15, -d, 0, -1, 8)                       # Kabel von den vorderen Mulden
+    m -= box(-w, 0, -10, 10, -1, 8)                       # Kabel von den hinteren Mulden
+    m -= box(0, w, -7, 7, -1, 9)                          # USB-C-Stecker
+    m -= label(ELECTRONICS, 7, w - 20).rotate([-90, 0, 0]).translate([0, 0, h])
+    return m
+
+
+def station(w: float, d: float, with_esp: bool = False) -> tuple[Manifold, list[Manifold]]:
     """Aufbauten und Ausschnitte einer Wägestelle (Mitte = Ursprung)."""
     add = box(-CELL_W / 2, CELL_W / 2, FIXED_Y1 - CLAMP_LEN, FIXED_Y1, BASE_T - 0.01, Z_CELL)
     for x, y in stop_positions(w, d):
@@ -155,8 +181,8 @@ def base_row(name: str) -> Manifold:
     pitch_y = row["depth"] + GAP
     m = box(-ROW_L / 2, ROW_L / 2, -pitch_y / 2, pitch_y / 2, 0, BASE_T)
     cuts: list[Manifold] = []
-    for i, (text, x, w) in enumerate(stations(row)):
-        add, cut = station(w, row["depth"], with_esp=text == ESP_UNDER and i == 0)
+    for text, x, w in stations(row):
+        add, cut = electronics_bay(w, row["depth"]) if text == ELECTRONICS else station(w, row["depth"])
         m += add.translate([x, 0, 0])
         cuts += [c.translate([x, 0, 0]) for c in cut]
     # Verbindungen in der Mitte der hinteren Mulden (dort ist am Rand nichts im Weg)
@@ -311,7 +337,10 @@ def main() -> None:
     parts = {"grundplatte_hinten.stl": base_row("hinten"), "grundplatte_vorne.stl": base_row("vorne"), "abstandshalter.stl": spacer()}
     for row in LAYOUT.values():
         for text, _, w in stations(row):
-            parts[f"mulde_{file_name(text)}.stl"] = bowl(text, w, row["depth"])
+            if text == ELECTRONICS:
+                parts["deckel_elektronik.stl"] = cover(w, row["depth"]).rotate([180, 0, 0])
+            else:
+                parts[f"mulde_{file_name(text)}.stl"] = bowl(text, w, row["depth"])
     for name, m in parts.items():
         assert m.status().name == "NoError", name
         write_stl(m, stl / name)
@@ -325,9 +354,11 @@ def main() -> None:
         y = offs[name]
         scene.append((base_row(name).translate([0, y, 0]), "#c9a43c"))
         for text, x, w in stations(row):
-            color = "#e8c766" if "€" in text or text == "50 ct" or text in ("20 ct", "10 ct") else "#c98a5a"
-            scene.append((bowl(text, w, row["depth"]).translate([x, y, Z_BOWL]), color))
-    render(scene, out / "vorschau_gesamt.png", 32, -70, "Oft gebrauchte Münzen vorne und größer, 1 ct und 2 ct klein hinten")
+            if text == ELECTRONICS:
+                scene.append((cover(w, row["depth"]).translate([x, y, BASE_T]), "#8a8f96"))
+            else:
+                scene.append((bowl(text, w, row["depth"]).translate([x, y, Z_BOWL]), "#e8c766" if name == "vorne" else "#c98a5a"))
+    render(scene, out / "vorschau_gesamt.png", 32, -70, "Vorne die oft gebrauchten Münzen, hinten 5/2/1 ct und das Elektronikfach")
 
     ex = 14.0
     row = LAYOUT["vorne"]
@@ -337,11 +368,10 @@ def main() -> None:
         (base_row("vorne").translate([0, y, 0]) ^ box(-ROW_L / 2, x + (w + GAP) / 2, -200, 200, -1, 50), "#c9a43c"),
         (cell_dummy().translate([x, y, ex * 0.5]), "#a8adb3"),
         (board_dummy(HX_W, HX_L, x + CELL_W / 2 + 1.5, y), "#7b3fa0"),
-        (board_dummy(ESP_L, ESP_W, -ROW_L / 2 - 1, y, 3), "#2f6f3a"),
         (spacer().translate([x, y + FREE_Y0 + CLAMP_LEN / 2, Z_SPACER + ex]), "#4a90d9"),
         (bowl(text, w, row["depth"]).translate([x, y, Z_BOWL + ex * 2.5]), "#e8c766"),
     ]
-    render(st, out / "vorschau_modul.png", 22, -60, "Eine Wägestelle, auseinandergezogen (Zelle grau, HX711 lila, ESP32 grün)")
+    render(st, out / "vorschau_modul.png", 22, -60, "Eine Wägestelle, auseinandergezogen (Zelle grau, HX711 lila)")
     depth = sum(r["depth"] + GAP for r in LAYOUT.values())
     print(f"Gesamtmaß: {ROW_L:.0f} x {depth:.0f} mm, Höhe {Z_BOWL + BOWL_H:.0f} mm")
 

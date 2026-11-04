@@ -9,12 +9,13 @@ Einsortierungen (z. B. 1 € gegen 50 ct) fordert die App zum Nachsehen auf.
 ![Eine Wägestelle](vorschau_modul.png)
 
 ```
-hinten (64 mm tief):  10 ct (70)   5 ct (66)   2 ct (52)   1 ct (52)    300-g-Zellen
-vorne  (88 mm tief):  2 € (62)     1 € (60)    50 ct (68)  20 ct (50)   500-g-Zellen
+hinten (62 mm tief):  5 ct (44)  2 ct (44)  1 ct (44)  [ Elektronikfach (108) ]
+vorne  (90 mm tief):  2 € (46)  1 € (50)  50 ct (54)  20 ct (46)  10 ct (42)
 ```
 
-Die oft gebrauchten Münzen liegen vorne, nah an der Hand, und haben tiefere Mulden.
-1 ct und 2 ct (bei Preisen in 5-ct-Schritten selten) sind schmal und hinten.
+Vorne, direkt an der Hand, liegen die fünf oft gebrauchten Münzen in großen Mulden.
+5 ct, 2 ct und 1 ct braucht man fast nie: sie sind klein und hinten. Daneben sitzt das
+Elektronikfach mit dem ESP32 unter einem Deckel (oben bündig, abnehmbar).
 
 Gesamtmaß: **248 × 156 mm, 43 mm hoch.**
 
@@ -22,9 +23,10 @@ Gesamtmaß: **248 × 156 mm, 43 mm hoch.**
 
 | Teil | Datei | Anzahl |
 |---|---|---|
-| Grundplatte hinten | `stl/grundplatte_hinten.stl` | 1 |
-| Grundplatte vorne (mit ESP32-Fach) | `stl/grundplatte_vorne.stl` | 1 |
+| Grundplatte hinten (mit Elektronikfach) | `stl/grundplatte_hinten.stl` | 1 |
+| Grundplatte vorne | `stl/grundplatte_vorne.stl` | 1 |
 | Mulde, beschriftet | `stl/mulde_*.stl` | je 1 |
+| Deckel Elektronikfach (kopfüber drucken) | `stl/deckel_elektronik.stl` | 1 |
 | Abstandshalter | `stl/abstandshalter.stl` | 8 |
 
 - Die Wägezelle wird mit ihrem **festen Ende** (hinten) von unten auf den Sockel geschraubt.
@@ -33,7 +35,7 @@ Gesamtmaß: **248 × 156 mm, 43 mm hoch.**
   2 mm über dem festen Zellenende, 2 mm unter dem freien Ende.
 - **Vier Anschlag-Schrauben** pro Mulde (M3×10, von unten in die Pfosten gedreht) fangen sie ab,
   wenn jemand fest hineindrückt. So kann die Zelle nicht überlastet werden.
-- Der ESP32 liegt in einer flachen Mulde unter der 2-€-Mulde, USB-C zeigt nach links. Die HX711 werden
+- Der ESP32 liegt im Elektronikfach, USB-C zeigt nach rechts aus dem Gerät. Die HX711 werden
   mit Klebepads auf eine freie Stelle unter der jeweiligen Mulde geklebt (nicht auf Pfosten oder Zelle).
 - Die beiden Grundplatten werden mit den Schwalbenschwänzen zusammengesteckt.
 
