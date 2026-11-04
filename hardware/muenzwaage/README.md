@@ -9,11 +9,14 @@ Einsortierungen (z. B. 1 € gegen 50 ct) fordert die App zum Nachsehen auf.
 ![Eine Wägestelle](vorschau_modul.png)
 
 ```
-hinten: 2 €    1 €    50 ct   20 ct     (500-g-Zellen)
-vorne:  10 ct  5 ct   2 ct    1 ct      (300-g-Zellen)
+hinten (64 mm tief):  10 ct (70)   5 ct (66)   2 ct (52)   1 ct (52)    300-g-Zellen
+vorne  (88 mm tief):  2 € (62)     1 € (60)    50 ct (68)  20 ct (50)   500-g-Zellen
 ```
 
-Gesamtmaß mit den Standardwerten: **248 × 160 mm, 43 mm hoch.**
+Die oft gebrauchten Münzen liegen vorne, nah an der Hand, und haben tiefere Mulden.
+1 ct und 2 ct (bei Preisen in 5-ct-Schritten selten) sind schmal und hinten.
+
+Gesamtmaß: **248 × 156 mm, 43 mm hoch.**
 
 ## Teile
 
@@ -30,14 +33,17 @@ Gesamtmaß mit den Standardwerten: **248 × 160 mm, 43 mm hoch.**
   2 mm über dem festen Zellenende, 2 mm unter dem freien Ende.
 - **Vier Anschlag-Schrauben** pro Mulde (M3×10, von unten in die Pfosten gedreht) fangen sie ab,
   wenn jemand fest hineindrückt. So kann die Zelle nicht überlastet werden.
-- HX711 und ESP32 liegen in flachen Mulden unter den Münzmulden (mit Klebepad fixieren).
+- Der ESP32 liegt in einer flachen Mulde unter der 2-€-Mulde, USB-C zeigt nach links. Die HX711 werden
+  mit Klebepads auf eine freie Stelle unter der jeweiligen Mulde geklebt (nicht auf Pfosten oder Zelle).
 - Die beiden Grundplatten werden mit den Schwalbenschwänzen zusammengesteckt.
 
 ## Maße anpassen
 
 Die Standardwerte sind Annahmen. Oben in `generate.py` anpassen und neu erzeugen:
 
-- `BOWL_W`, `BOWL_D`, `BOWL_H` – Größe der Mulden (z. B. niedriger, wenn die Kassenschublade flach ist)
+- `LAYOUT` – welche Münze in welcher Reihe, Breite jeder Mulde und Tiefe jeder Reihe. Beide Reihen
+  müssen zusammen gleich breit sein, jede Mulde mindestens 42 mm breit.
+- `BOWL_H` – Höhe der Mulden (z. B. niedriger, wenn die Kassenschublade flach ist)
 - `CLAMP_LEN`, `SCREW_SLOT` – Länge des massiven Endblocks der Wägezelle und Lage der Gewindelöcher.
   Sockel und Abstandshalter dürfen **nur unter bzw. auf dem Endblock** liegen, nicht am dünnen Mittelteil.
 
