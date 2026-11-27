@@ -10,6 +10,7 @@ import ChaxterLogo from "./chaxter-logo";
 import { LoadingButton } from "./interior/loading-button";
 import { OtpInput } from "./interior/otp-input";
 import QrScanner from "./qr-scanner";
+import LegalLinks from "./legal-links";
 
 export default function LoginForm({ setup = false }: { setup?: boolean }) {
   const [busy, setBusy] = useState(false);
@@ -140,6 +141,7 @@ export default function LoginForm({ setup = false }: { setup?: boolean }) {
             <QrScanner open={scanning} onClose={() => setScanning(false)} />
           </>
         )}
+        <LegalLinks />
       </div>
     </main>
   );

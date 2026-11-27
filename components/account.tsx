@@ -16,6 +16,7 @@ import { authClient } from "@/lib/auth-client";
 import { getDevice, renameDevice, type Device } from "@/lib/device";
 import { readRecords } from "@/lib/sync-state";
 import { sendDiagnosticReport } from "@/lib/support";
+import LegalLinks from "./legal-links";
 
 export default function Account({ user }: { user: { username: string; role: string } }) {
   const { data: session } = authClient.useSession();
@@ -249,6 +250,7 @@ export default function Account({ user }: { user: { username: string; role: stri
           </LoadingButton>
         </form>
       </AccordionSection>
+      <LegalLinks />
     </main>
   );
 }
