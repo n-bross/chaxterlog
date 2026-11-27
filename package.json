@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/*.test.ts && vitest run"
+    "test": "node --experimental-strip-types --test lib/*.test.ts && vitest run",
+    "check:legal": "node scripts/check-legal-placeholders.mjs"
   },
   "dependencies": {
     "@convex-dev/better-auth": "^0.12.5",
